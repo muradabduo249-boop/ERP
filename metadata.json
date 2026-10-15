@@ -1,0 +1,6 @@
+{
+  "name": "سهلا للخدمات اللوجستية والـ ERP | Sahla ERP",
+  "description": "منصة سهلا المتكاملة لإدارة العمليات اللوجستية، المشتريات، الشحن، التخليص الجمركي، والمالية (SAHLA ERP & CRM Platform).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

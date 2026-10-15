@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "notifications_task_deadline_dedup_idx" ON "notifications" USING btree ("entity_id", ((metadata ->> 'windowKey'))) WHERE "type" = 'task_deadline' AND "entity_type" = 'task' AND (metadata ->> 'windowKey') IS NOT NULL;

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>سهلا للخدمات اللوجستية والـ ERP | Sahla ERP</title>
+    <meta name="description" content="منصة سهلا المتكاملة لإدارة العمليات اللوجستية، المشتريات، الشحن، التخليص الجمركي، والمالية (SAHLA ERP & CRM Platform)." />
+    <meta property="og:title" content="سهلا للخدمات اللوجستية والـ ERP | Sahla ERP" />
+    <meta property="og:description" content="منصة سهلا المتكاملة لإدارة العمليات اللوجستية، المشتريات، الشحن، التخليص الجمركي، والمالية (SAHLA ERP & CRM Platform)." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      // Gracefully handle Vite HMR WebSockets in sandbox environments where HMR is disabled
+      if (typeof window !== 'undefined') {
+        const OriginalWebSocket = window.WebSocket;
+        window.WebSocket = function (url, protocols) {
+          if (typeof url === 'string' && (url.includes('vite-hmr') || protocols === 'vite-hmr' || (Array.isArray(protocols) && protocols.includes('vite-hmr')))) {
+            const fakeWs = {
+              readyState: 3, // CLOSED
+              addEventListener: function () {},
+              removeEventListener: function () {},
+              send: function () {},
+              close: function () {},
+            };
+            return fakeWs;
+          }
+          return new OriginalWebSocket(url, protocols);
+        };
+        Object.assign(window.WebSocket, OriginalWebSocket);
+      }
+    </script>
+  </head>
+  <body class="bg-[#F8FAFC] text-[#0F172A] antialiased selection:bg-[#F5B800]/30 selection:text-slate-950">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
