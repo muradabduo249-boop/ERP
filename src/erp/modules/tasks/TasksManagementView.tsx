@@ -19,6 +19,10 @@ import {
   ChevronLeft,
   ChevronRight,
   BellRing,
+  Lock,
+  Eye,
+  CalendarClock,
+  MessageSquare,
 } from 'lucide-react';
 import { useErpAuth } from '../../context/ErpAuthContext';
 
@@ -78,6 +82,12 @@ export const TasksManagementView: React.FC = () => {
   const { currentUser, sessionToken } = useErpAuth();
   const token = sessionToken;
 
+  const getAuthToken = () =>
+    token ||
+    localStorage.getItem('sahla_erp_auth_token_v1') ||
+    localStorage.getItem('sahla_auth_token') ||
+    '';
+
   // State
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [counts, setCounts] = useState<TasksResponseCounts>({
@@ -102,6 +112,20 @@ export const TasksManagementView: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+
+  // Task Details & Handover Modal state
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [detailTask, setDetailTask] = useState<TaskRecord | null>(null);
+  const [detailNoteInput, setDetailNoteInput] = useState('');
+
+  // Schedule & Deadlines Inspection Modal state
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [scheduleData, setScheduleData] = useState<{
+    scanned: number;
+    sentCount: number;
+    overdueTasks: TaskRecord[];
+    urgentTasks: TaskRecord[];
+  } | null>(null);
 
   // Form Data for Create
   const [createForm, setCreateForm] = useState({
@@ -130,7 +154,7 @@ export const TasksManagementView: React.FC = () => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const authToken = token || localStorage.getItem('sahla_auth_token') || sessionStorage.getItem('sahla_auth_token');
+      const authToken = getAuthToken();
       const params = new URLSearchParams({
         page: String(page),
         limit: '20',
@@ -164,7 +188,7 @@ export const TasksManagementView: React.FC = () => {
   };
 
   const loadLookups = async () => {
-    const authToken = token || localStorage.getItem('sahla_auth_token') || sessionStorage.getItem('sahla_auth_token');
+    const authToken = getAuthToken();
     try {
       // Load users
       const uRes = await fetch('/api/foundation/users', {
@@ -229,21 +253,34 @@ export const TasksManagementView: React.FC = () => {
     fetchTasks();
   };
 
-  const handleUpdateStatus = async (taskId: string, newStatus: TaskRecord['status']) => {
+  const handleUpdateStatus = async (taskId: string, newStatus: TaskRecord['status'], noteText?: string) => {
     try {
-      const authToken = token || localStorage.getItem('sahla_auth_token') || sessionStorage.getItem('sahla_auth_token');
+      const authToken = getAuthToken();
       const res = await fetch(`/api/tasks/${taskId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, notes: noteText }),
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg('تم تحديث حالة المهمة بنجاح');
+        setSuccessMsg('تم تحديث حالة المهمة وتوثيق السجل بنجاح');
         fetchTasks();
+        if (detailTask && detailTask.id === taskId) {
+          const updatedNote = noteText?.trim()
+            ? detailTask.notes
+              ? `${detailTask.notes}\n[${new Date().toLocaleDateString('ar-SD')} - ${currentUser?.name}]: ${noteText.trim()}`
+              : `[${new Date().toLocaleDateString('ar-SD')} - ${currentUser?.name}]: ${noteText.trim()}`
+            : detailTask.notes;
+
+          setDetailTask({
+            ...detailTask,
+            status: newStatus,
+            notes: updatedNote,
+          });
+        }
         setTimeout(() => setSuccessMsg(null), 3000);
       } else {
         setErrorMsg(data.error?.message || 'تعذر تحديث الحالة');
@@ -251,6 +288,20 @@ export const TasksManagementView: React.FC = () => {
     } catch (err: any) {
       setErrorMsg(err.message || 'حدث خطأ أثناء تحديث الحالة');
     }
+  };
+
+  const handleAddComment = async (taskId: string, commentText: string) => {
+    if (!commentText.trim()) return;
+    const task = detailTask?.id === taskId ? detailTask : tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    await handleUpdateStatus(taskId, task.status, commentText.trim());
+    setDetailNoteInput('');
+  };
+
+  const openTaskDetail = (task: TaskRecord) => {
+    setDetailTask(task);
+    setDetailNoteInput('');
+    setIsDetailModalOpen(true);
   };
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -261,7 +312,7 @@ export const TasksManagementView: React.FC = () => {
     }
 
     try {
-      const authToken = token || localStorage.getItem('sahla_auth_token') || sessionStorage.getItem('sahla_auth_token');
+      const authToken = getAuthToken();
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: {
@@ -306,7 +357,7 @@ export const TasksManagementView: React.FC = () => {
     if (!selectedTask) return;
 
     try {
-      const authToken = token || localStorage.getItem('sahla_auth_token') || sessionStorage.getItem('sahla_auth_token');
+      const authToken = getAuthToken();
       const res = await fetch(`/api/tasks/${selectedTask.id}/assign`, {
         method: 'PATCH',
         headers: {
@@ -337,16 +388,45 @@ export const TasksManagementView: React.FC = () => {
 
   const handleCheckDeadlines = async () => {
     try {
-      const authToken = token || localStorage.getItem('sahla_auth_token') || sessionStorage.getItem('sahla_auth_token');
+      const authToken = getAuthToken();
       const res = await fetch('/api/tasks/check-deadlines', {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg(`تم فحص المواعيد وإرسال ${data.data.sentCount} إشعار للمهام القريبة أو المتأخرة`);
-        fetchTasks();
-        setTimeout(() => setSuccessMsg(null), 4000);
+        let allTasksToInspect = tasks;
+        try {
+          const allRes = await fetch('/api/tasks?limit=100&queue=all', {
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+          if (allRes.ok) {
+            const allData = await allRes.json();
+            if (allData.success && Array.isArray(allData.data)) {
+              allTasksToInspect = allData.data;
+            }
+          }
+        } catch {}
+
+        const now = new Date();
+        const next48h = new Date(Date.now() + 48 * 60 * 60 * 1000);
+
+        const overdue = allTasksToInspect.filter((t) => t.isOverdue || (t.dueDate && new Date(t.dueDate) < now && t.status !== 'completed'));
+        const urgent = allTasksToInspect.filter((t) => {
+          if (!t.dueDate || t.status === 'completed') return false;
+          const d = new Date(t.dueDate);
+          return d >= now && d <= next48h;
+        });
+
+        setScheduleData({
+          scanned: data.data.scanned || allTasksToInspect.length,
+          sentCount: data.data.sentCount || 0,
+          overdueTasks: overdue,
+          urgentTasks: urgent,
+        });
+        setIsScheduleModalOpen(true);
+        setSuccessMsg(`تم فحص المواعيد وتوليد تنبيهات للمهام (${overdue.length} متأخرة، ${urgent.length} وشيكة)`);
+        setTimeout(() => setSuccessMsg(null), 3000);
       }
     } catch (err: any) {
       setErrorMsg('تعذر تشغيل فحص المواعيد');
@@ -656,134 +736,156 @@ export const TasksManagementView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {tasks.map((task) => (
-                  <tr
-                    key={task.id}
-                    className={`hover:bg-slate-50/80 transition-colors ${
-                      task.isOverdue ? 'bg-rose-50/30' : ''
-                    }`}
-                  >
-                    {/* Task Title & Request */}
-                    <td className="p-3.5">
-                      <div className="space-y-1">
-                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                          <span>{task.title}</span>
-                          {task.isOverdue && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-800">
-                              متأخرة!
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                          <span className="font-mono font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60">
-                            {task.request.requestCode}
-                          </span>
-                          <span className="truncate max-w-xs">{task.request.title}</span>
-                        </div>
-                        {task.notes && (
-                          <p className="text-[10px] text-slate-400 line-clamp-1">{task.notes}</p>
-                        )}
-                      </div>
-                    </td>
+                {tasks.map((task) => {
+                  const isAssignedToMe = task.assignedUserId === currentUser?.id;
+                  const isSuperAdmin = currentUser?.roleCode === 'super_admin' || currentUser?.roleCode === 'admin';
+                  const canControlTask = isAssignedToMe || isSuperAdmin;
 
-                    {/* Customer */}
-                    <td className="p-3.5">
-                      <div className="font-medium text-slate-800">{task.customer.companyName}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{task.customer.customerCode}</div>
-                    </td>
-
-                    {/* Assignee & Department */}
-                    <td className="p-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-6 h-6 rounded-lg bg-slate-200 text-slate-700 font-bold text-[10px] flex items-center justify-center shrink-0">
-                          {task.assignedUser ? task.assignedUser.name.slice(0, 1) : '?'}
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 text-[11px]">
-                            {task.assignedUser ? task.assignedUser.name : (
-                              <span className="text-slate-400 italic">غير معين</span>
+                  return (
+                    <tr
+                      key={task.id}
+                      onClick={() => openTaskDetail(task)}
+                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${
+                        task.isOverdue ? 'bg-rose-50/30' : ''
+                      }`}
+                    >
+                      {/* Task Title & Request */}
+                      <td className="p-3.5">
+                        <div className="space-y-1">
+                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                            <span>{task.title}</span>
+                            {task.isOverdue && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-800">
+                                متأخرة!
+                              </span>
                             )}
                           </div>
-                          {task.department && (
-                            <div className="text-[9px] text-slate-500">{task.department.nameAr}</div>
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            <span className="font-mono font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60">
+                              {task.request.requestCode}
+                            </span>
+                            <span className="truncate max-w-xs">{task.request.title}</span>
+                          </div>
+                          {task.notes && (
+                            <p className="text-[10px] text-slate-400 line-clamp-1 flex items-center gap-1">
+                              <MessageSquare className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>{task.notes}</span>
+                            </p>
                           )}
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Priority */}
-                    <td className="p-3.5">{getPriorityBadge(task.priority)}</td>
+                      {/* Customer */}
+                      <td className="p-3.5">
+                        <div className="font-medium text-slate-800">{task.customer.companyName}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{task.customer.customerCode}</div>
+                      </td>
 
-                    {/* Due Date */}
-                    <td className="p-3.5">
-                      {task.dueDate ? (
-                        <div className={`font-mono text-[11px] flex items-center gap-1 ${
-                          task.isOverdue ? 'text-rose-600 font-bold' : 'text-slate-600'
-                        }`}>
-                          <Calendar className="w-3 h-3" />
-                          <span>{new Date(task.dueDate).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">غير محدد</span>
-                      )}
-                    </td>
-
-                    {/* Status */}
-                    <td className="p-3.5">
-                      <div className="space-y-1">
-                        {getStatusBadge(task.status)}
-                        {task.completedAt && (
-                          <div className="text-[9px] text-emerald-700 font-mono">
-                            تم في {new Date(task.completedAt).toLocaleDateString('ar-EG')}
+                      {/* Assignee & Department */}
+                      <td className="p-3.5">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-6 h-6 rounded-lg bg-slate-200 text-slate-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                            {task.assignedUser ? task.assignedUser.name.slice(0, 1) : '?'}
                           </div>
-                        )}
-                      </div>
-                    </td>
+                          <div>
+                            <div className="font-bold text-slate-800 text-[11px]">
+                              {task.assignedUser ? task.assignedUser.name : (
+                                <span className="text-slate-400 italic">غير معين</span>
+                              )}
+                            </div>
+                            {task.department && (
+                              <div className="text-[9px] text-slate-500">{task.department.nameAr}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
 
-                    {/* Action buttons */}
-                    <td className="p-3.5 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {/* Quick Status toggle buttons */}
-                        {task.status !== 'completed' ? (
+                      {/* Priority */}
+                      <td className="p-3.5">{getPriorityBadge(task.priority)}</td>
+
+                      {/* Due Date */}
+                      <td className="p-3.5">
+                        {task.dueDate ? (
+                          <div className={`font-mono text-[11px] flex items-center gap-1 ${
+                            task.isOverdue ? 'text-rose-600 font-bold' : 'text-slate-600'
+                          }`}>
+                            <Calendar className="w-3 h-3" />
+                            <span>{new Date(task.dueDate).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">غير محدد</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="p-3.5">
+                        <div className="space-y-1">
+                          {getStatusBadge(task.status)}
+                          {task.completedAt && (
+                            <div className="text-[9px] text-emerald-700 font-mono">
+                              تم في {new Date(task.completedAt).toLocaleDateString('ar-EG')}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Action buttons */}
+                      <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        {!canControlTask ? (
                           <button
-                            onClick={() => handleUpdateStatus(task.id, 'completed')}
-                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold transition-colors cursor-pointer"
-                            title="إنجاز المهمة"
+                            type="button"
+                            onClick={() => openTaskDetail(task)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold cursor-pointer transition-colors"
+                            title="هذه المهمة مسندة لزميل آخر، انقر للاطلاع والمتابعة"
                           >
-                            <Check className="w-3.5 h-3.5" />
+                            <Lock className="w-3 h-3 text-slate-400" />
+                            <span>للاطلاع</span>
                           </button>
                         ) : (
-                          <button
-                            onClick={() => handleUpdateStatus(task.id, 'in_progress')}
-                            className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold transition-colors cursor-pointer"
-                            title="إعادة فتح المهمة"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* Quick Status toggle buttons */}
+                            {task.status !== 'completed' ? (
+                              <button
+                                onClick={() => handleUpdateStatus(task.id, 'completed', 'تم إنجاز المهمة')}
+                                className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold transition-colors cursor-pointer"
+                                title="إنجاز المهمة (مكتملة)"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleUpdateStatus(task.id, 'in_progress', 'إعادة الفتح')}
+                                className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold transition-colors cursor-pointer"
+                                title="إعادة فتح المهمة"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
-                        {task.status === 'pending' && (
-                          <button
-                            onClick={() => handleUpdateStatus(task.id, 'in_progress')}
-                            className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold transition-colors cursor-pointer"
-                            title="بدء تنفيذ المهمة"
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                            {task.status === 'pending' && (
+                              <button
+                                onClick={() => handleUpdateStatus(task.id, 'in_progress', 'بدء التنفيذ')}
+                                className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold transition-colors cursor-pointer"
+                                title="بدء تنفيذ المهمة"
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
-                        {/* Reassign button */}
-                        <button
-                          onClick={() => openReassignModal(task)}
-                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-                          title="إعادة إسناد المهمة"
-                        >
-                          <UserPlus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                            {/* Reassign button */}
+                            <button
+                              onClick={() => openReassignModal(task)}
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                              title="إعادة إسناد المهمة"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1043,6 +1145,280 @@ export const TasksManagementView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* TASK DETAILS & HANDOVER MODAL */}
+      {isDetailModalOpen && detailTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#172033]/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 text-right space-y-4 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                {getStatusBadge(detailTask.status)}
+                {getPriorityBadge(detailTask.priority)}
+                {detailTask.isOverdue && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800">
+                    متأخرة عن الموعد!
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => { setIsDetailModalOpen(false); setDetailTask(null); }}
+                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Title & Linked Info */}
+            <div>
+              <h3 className="text-lg font-black text-slate-900">{detailTask.title}</h3>
+              <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                <span>الطلب المركزي: <b className="text-amber-700 font-mono">{detailTask.request.requestCode}</b> ({detailTask.request.title})</span>
+                <span>•</span>
+                <span>العميل: <b className="text-slate-800">{detailTask.customer.companyName}</b></span>
+                <span>•</span>
+                <span>المكلف: <b className="text-blue-700">{detailTask.assignedUser?.name || 'غير معين'}</b></span>
+              </div>
+            </div>
+
+            {/* Quick Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px]">تاريخ الإنشاء والتكليف:</span>
+                <span className="font-mono font-bold text-slate-700">
+                  {new Date(detailTask.createdAt).toLocaleDateString('ar-SD')}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">موعد الاستحقاق:</span>
+                <span className={`font-mono font-bold ${detailTask.isOverdue ? 'text-rose-600' : 'text-slate-700'}`}>
+                  {detailTask.dueDate ? new Date(detailTask.dueDate).toLocaleDateString('ar-SD') : 'غير محدد'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">القسم المسؤول:</span>
+                <span className="font-bold text-slate-800">{detailTask.department?.nameAr || 'العمليات'}</span>
+              </div>
+            </div>
+
+            {/* Required Action */}
+            <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-200/80 text-xs space-y-1">
+              <div className="font-bold text-blue-900 flex items-center gap-1.5">
+                <CheckSquare className="w-4 h-4 text-blue-600" />
+                <span>المطلوب منك في هذه الخطوة التشغيلية:</span>
+              </div>
+              <p className="text-blue-800 leading-relaxed">
+                {detailTask.priority === 'urgent'
+                  ? 'مهمة عاجلة جداً: يلزم المتابعة الفورية والتنسيق المباشر وإشعار المشرف أو الإدارة فور انتهاء الإجراء.'
+                  : 'مطلوب إتمام الإجراء الميداني/التشغيلي المحدد وتوثيق الملاحظات وإرفاق المستندات المطلوبة في سجل الطلب.'}
+              </p>
+            </div>
+
+            {/* Previous Handover Notes & Communication */}
+            <div className="space-y-1.5">
+              <label className="block font-bold text-slate-800 text-xs">سجل الملاحظات والتسليم بين الموظفين:</label>
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-sans text-slate-700 max-h-40 overflow-y-auto whitespace-pre-line leading-relaxed">
+                {detailTask.notes ? detailTask.notes : <span className="text-slate-400 italic">لا توجد ملاحظات سابقة مسجلة على هذه المهمة.</span>}
+              </div>
+            </div>
+
+            {/* Add new Handover Note / Progress Comment */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
+              <label className="block font-bold text-slate-800 text-xs">إضافة تعليق / تقرير إنجاز جديد:</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={detailNoteInput}
+                  onChange={(e) => setDetailNoteInput(e.target.value)}
+                  placeholder="اكتب ملاحظة أو ما تم إنجازه لتسليمه للموظف التالي..."
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddComment(detailTask.id, detailNoteInput)}
+                  disabled={!detailNoteInput.trim()}
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs disabled:opacity-40 cursor-pointer"
+                >
+                  حفظ الملاحظة
+                </button>
+              </div>
+            </div>
+
+            {/* Control Actions footer */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+              {detailTask.assignedUserId === currentUser?.id || currentUser?.roleCode === 'super_admin' || currentUser?.roleCode === 'admin' ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {detailTask.status !== 'in_progress' && detailTask.status !== 'completed' && (
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus(detailTask.id, 'in_progress', 'بدء التنفيذ')}
+                      className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>بدء التنفيذ (جاري)</span>
+                    </button>
+                  )}
+                  {detailTask.status !== 'completed' ? (
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus(detailTask.id, 'completed', 'تم الإنجاز والاكتمال')}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>إنجاز المهمة (مكتملة)</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus(detailTask.id, 'in_progress', 'إعادة الفتح للمراجعة')}
+                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>إعادة فتح المهمة للمراجعة</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-amber-800 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">
+                  ⚠️ هذه المهمة مسندة إلى [{detailTask.assignedUser?.name || 'زميل آخر'}]. التحكم في حالتها متاح فقط للموظف المكلف أو المدير العام.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => { setIsDetailModalOpen(false); setDetailTask(null); }}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SCHEDULE & DEADLINES INSPECTION MODAL */}
+      {isScheduleModalOpen && scheduleData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#172033]/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 text-right space-y-4 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                  <CalendarClock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">فحص ومراقبة مواعيد الاستحقاق (Deadlines Inspector)</h3>
+                  <p className="text-xs text-slate-500">نتائج الفحص الشامل لكافة المهام ومواعيد التسليم بالمنظومة</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+                <span className="text-xs text-slate-500 block">إجمالي المهام المفحوصة</span>
+                <span className="text-2xl font-black text-slate-900 font-mono mt-1">{scheduleData.scanned}</span>
+              </div>
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-center">
+                <span className="text-xs text-rose-700 font-bold block">متأخرة عن الموعد</span>
+                <span className="text-2xl font-black text-rose-700 font-mono mt-1">{scheduleData.overdueTasks.length}</span>
+              </div>
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-center">
+                <span className="text-xs text-amber-800 font-bold block">تستحق خلال 48 ساعة</span>
+                <span className="text-2xl font-black text-amber-700 font-mono mt-1">{scheduleData.urgentTasks.length}</span>
+              </div>
+            </div>
+
+            {/* Overdue Tasks List */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                <span>المهام المتأخرة التي تتطلب تدخلاً فورياً ({scheduleData.overdueTasks.length}):</span>
+              </div>
+
+              {scheduleData.overdueTasks.length === 0 ? (
+                <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-200 text-center text-xs text-emerald-800 font-bold">
+                  ✓ لا توجد مهام متأخرة حالياً! كافة العمليات تسير وفق الجدول الزمني المخطط.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {scheduleData.overdueTasks.map((t) => (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        setIsScheduleModalOpen(false);
+                        openTaskDetail(t);
+                      }}
+                      className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100/60 transition-colors flex items-center justify-between text-xs cursor-pointer"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900">{t.title}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          الطلب: <b className="font-mono text-amber-800">{t.request.requestCode}</b> | المكلف: <b>{t.assignedUser?.name || 'غير معين'}</b>
+                        </div>
+                      </div>
+                      <div className="text-left font-mono">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-200 text-rose-900">
+                          استحقاق: {t.dueDate ? new Date(t.dueDate).toLocaleDateString('ar-SD') : 'متأخر'}
+                        </span>
+                        <div className="text-[10px] text-blue-700 font-bold mt-1">انقر للفتح ←</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Upcoming within 48h */}
+            {scheduleData.urgentTasks.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="text-xs font-bold text-slate-800">
+                  مهام وشيكة الاستحقاق خلال 48 ساعة ({scheduleData.urgentTasks.length}):
+                </div>
+                <div className="space-y-2 max-h-36 overflow-y-auto">
+                  {scheduleData.urgentTasks.map((t) => (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        setIsScheduleModalOpen(false);
+                        openTaskDetail(t);
+                      }}
+                      className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-100/60 transition-colors flex items-center justify-between text-xs cursor-pointer"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900">{t.title}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          الطلب: <b className="font-mono">{t.request.requestCode}</b> | المكلف: <b>{t.assignedUser?.name || 'غير معين'}</b>
+                        </div>
+                      </div>
+                      <div className="text-left font-mono">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">
+                          {t.dueDate ? new Date(t.dueDate).toLocaleDateString('ar-SD') : ''}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
           </div>
         </div>
       )}

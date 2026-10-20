@@ -24,6 +24,7 @@ import {
   ExternalLink,
   Clock,
   FileSpreadsheet,
+  Edit2,
 } from 'lucide-react';
 import { CustomerMaster, RequestPriority } from '../../../types';
 import { ErpDocumentPrintModal, PrintableDocType } from '../../components/ErpDocumentPrintModal';
@@ -68,11 +69,30 @@ export const CustomerMasterView: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
+  const [country, setCountry] = useState('السودان');
+  const [customCountry, setCustomCountry] = useState('');
   const [city, setCity] = useState('بورتسودان');
   const [address, setAddress] = useState('');
   const [taxNumber, setTaxNumber] = useState('');
   const [nationalId, setNationalId] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Edit Customer Form State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editCompanyName, setEditCompanyName] = useState('');
+  const [editContactName, setEditContactName] = useState('');
+  const [editBusinessType, setEditBusinessType] = useState<CustomerMaster['businessType']>('commercial');
+  const [editPhone, setEditPhone] = useState('');
+  const [editWhatsapp, setEditWhatsapp] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editCountry, setEditCountry] = useState('السودان');
+  const [editCustomCountry, setEditCustomCountry] = useState('');
+  const [editCity, setEditCity] = useState('بورتسودان');
+  const [editAddress, setEditAddress] = useState('');
+  const [editTaxNumber, setEditTaxNumber] = useState('');
+  const [editNationalId, setEditNationalId] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Duplicate check alert
   const [dupWarning, setDupWarning] = useState<CustomerMaster[] | null>(null);
@@ -171,6 +191,8 @@ export const CustomerMasterView: React.FC = () => {
     e.preventDefault();
     if (!companyName.trim() || !phone.trim()) return;
 
+    const finalCountry = country === 'أخرى' ? (customCountry.trim() || 'دولة أخرى') : country;
+
     // Check duplicate first
     if (sessionToken) {
       try {
@@ -187,7 +209,8 @@ export const CustomerMasterView: React.FC = () => {
             phone: phone.trim(),
             whatsapp: whatsapp.trim() || phone.trim(),
             email: email.trim() || undefined,
-            city,
+            country: finalCountry,
+            city: city.trim() || 'بورتسودان',
             address: address.trim() || undefined,
             taxNumber: taxNumber.trim() || undefined,
             nationalIdOrPassport: nationalId.trim() || undefined,
@@ -211,8 +234,8 @@ export const CustomerMasterView: React.FC = () => {
         primaryPhone: phone.trim(),
         whatsapp: whatsapp.trim() || phone.trim(),
         email: email.trim() || undefined,
-        country: 'السودان',
-        city,
+        country: finalCountry,
+        city: city.trim() || 'بورتسودان',
         address: address.trim() || undefined,
         taxNumber: taxNumber.trim() || undefined,
         nationalIdOrPassport: nationalId.trim() || undefined,
@@ -230,11 +253,112 @@ export const CustomerMasterView: React.FC = () => {
     setPhone('');
     setWhatsapp('');
     setEmail('');
+    setCountry('السودان');
+    setCustomCountry('');
+    setCity('بورتسودان');
     setTaxNumber('');
     setNotes('');
     setDupWarning(null);
     refreshData();
     setSelectedCustomer(created);
+  };
+
+  const handleOpenEditCustomer = (cust: CustomerMaster) => {
+    setEditCompanyName(cust.companyName || '');
+    setEditContactName(cust.contactName || '');
+    setEditBusinessType(cust.businessType || 'commercial');
+    setEditPhone(cust.primaryPhone || '');
+    setEditWhatsapp(cust.whatsapp || '');
+    setEditEmail(cust.email || '');
+    const standardCountries = [
+      'السودان',
+      'الإمارات العربية المتحدة',
+      'الصين',
+      'المملكة العربية السعودية',
+      'مصر',
+      'تركيا',
+      'قطر',
+      'سلطنة عمان',
+    ];
+    if (standardCountries.includes(cust.country)) {
+      setEditCountry(cust.country);
+      setEditCustomCountry('');
+    } else {
+      setEditCountry('أخرى');
+      setEditCustomCountry(cust.country || '');
+    }
+    setEditCity(cust.city || 'بورتسودان');
+    setEditAddress(cust.address || '');
+    setEditTaxNumber(cust.taxNumber || '');
+    setEditNationalId(cust.nationalIdOrPassport || '');
+    setEditNotes(cust.notes || '');
+    setShowEditModal(true);
+  };
+
+  const handleSaveEditCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer) return;
+    if (!editCompanyName.trim() || !editPhone.trim()) {
+      alert('يرجى ملء اسم الشركة ورقم الهاتف');
+      return;
+    }
+
+    const finalCountry = editCountry === 'أخرى' ? (editCustomCountry.trim() || 'دولة أخرى') : editCountry;
+    setIsSavingEdit(true);
+
+    try {
+      if (sessionToken) {
+        await fetch(`/api/customers/${selectedCustomer.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${sessionToken}`,
+          },
+          body: JSON.stringify({
+            companyName: editCompanyName.trim(),
+            primaryContactName: editContactName.trim() || editCompanyName.trim(),
+            customerType: editBusinessType,
+            phone: editPhone.trim(),
+            whatsapp: editWhatsapp.trim() || editPhone.trim(),
+            email: editEmail.trim() || undefined,
+            country: finalCountry,
+            city: editCity.trim() || 'بورتسودان',
+            address: editAddress.trim() || undefined,
+            taxNumber: editTaxNumber.trim() || undefined,
+            nationalIdOrPassport: editNationalId.trim() || undefined,
+            notes: editNotes.trim() || undefined,
+          }),
+        });
+      }
+
+      const updated = erpEngine.updateCustomer(
+        selectedCustomer.id,
+        {
+          companyName: editCompanyName.trim(),
+          contactName: editContactName.trim() || editCompanyName.trim(),
+          businessType: editBusinessType,
+          primaryPhone: editPhone.trim(),
+          whatsapp: editWhatsapp.trim() || editPhone.trim(),
+          email: editEmail.trim() || undefined,
+          country: finalCountry,
+          city: editCity.trim() || 'بورتسودان',
+          address: editAddress.trim() || undefined,
+          taxNumber: editTaxNumber.trim() || undefined,
+          nationalIdOrPassport: editNationalId.trim() || undefined,
+          notes: editNotes.trim() || undefined,
+        },
+        currentUser
+      );
+
+      setSelectedCustomer(updated);
+      setShowEditModal(false);
+      refreshData();
+      fetchServerCustomers();
+    } catch (err: any) {
+      alert(err.message || 'فشل تحديث بيانات العميل');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const handleQuickCreateRequest = (e: React.FormEvent) => {
@@ -592,7 +716,22 @@ export const CustomerMasterView: React.FC = () => {
             {customerSubTab === 'overview' && (
               <div className="space-y-4">
                 <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 text-xs space-y-3">
-                  <div className="text-base font-bold text-slate-900">{selectedCustomer.companyName}</div>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="text-base font-bold text-slate-900">{selectedCustomer.companyName}</div>
+                      <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                        كود العميل: {selectedCustomer.customerCode} | {selectedCustomer.country} - {selectedCustomer.city}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditCustomer(selectedCustomer)}
+                      className="px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>تعديل بيانات العميل</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-2 gap-3 text-slate-700">
                     <div>
                       <span className="text-slate-400 block mb-0.5">الشخص المسؤول:</span>
@@ -1099,22 +1238,135 @@ export const CustomerMasterView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">المدينة في السودان</label>
+                  <label className="block font-bold text-slate-700 mb-1">الدولة *</label>
+                  <select
+                    value={country}
+                    onChange={(e) => {
+                      const newCountry = e.target.value;
+                      setCountry(newCountry);
+                      if (newCountry === 'السودان') setCity('بورتسودان');
+                      else if (newCountry === 'الإمارات العربية المتحدة') setCity('دبي');
+                      else if (newCountry === 'الصين') setCity('كوانزو (Guangzhou)');
+                      else if (newCountry === 'المملكة العربية السعودية') setCity('الرياض');
+                      else if (newCountry === 'مصر') setCity('القاهرة');
+                      else if (newCountry === 'تركيا') setCity('إسطنبول');
+                      else setCity('');
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-medium"
+                  >
+                    <option value="السودان">السودان (Sudan)</option>
+                    <option value="الإمارات العربية المتحدة">الإمارات العربية المتحدة (UAE)</option>
+                    <option value="الصين">الصين (China)</option>
+                    <option value="المملكة العربية السعودية">المملكة العربية السعودية (KSA)</option>
+                    <option value="مصر">مصر (Egypt)</option>
+                    <option value="تركيا">تركيا (Turkey)</option>
+                    <option value="قطر">قطر (Qatar)</option>
+                    <option value="سلطنة عمان">سلطنة عمان (Oman)</option>
+                    <option value="أخرى">دولة أخرى (International)</option>
+                  </select>
+                  {country === 'أخرى' && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الدولة / البلد: *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مثال: تشاد، أوغندا، كندا، ألمانيا..."
+                        value={customCountry}
+                        onChange={(e) => setCustomCountry(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-amber-300 bg-amber-50/40 text-xs font-bold"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">المدينة / المقر *</label>
                   <input
                     type="text"
-                    placeholder="بورتسودان، الخرطوم..."
+                    required
+                    list="city-suggestions"
+                    placeholder="اسم المدينة..."
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300"
                   />
+                  <datalist id="city-suggestions">
+                    {country === 'السودان' && (
+                      <>
+                        <option value="بورتسودان" />
+                        <option value="الخرطوم" />
+                        <option value="أم درمان" />
+                        <option value="بحري" />
+                        <option value="عطبرة" />
+                        <option value="ود مدني" />
+                        <option value="كسلا" />
+                        <option value="القضارف" />
+                        <option value="كوستي" />
+                        <option value="دنقلا" />
+                      </>
+                    )}
+                    {country === 'الإمارات العربية المتحدة' && (
+                      <>
+                        <option value="دبي" />
+                        <option value="الشارقة" />
+                        <option value="أبوظبي" />
+                        <option value="عجمان" />
+                      </>
+                    )}
+                    {country === 'الصين' && (
+                      <>
+                        <option value="كوانزو (Guangzhou)" />
+                        <option value="فوشان (Foshan)" />
+                        <option value="شنتشن (Shenzhen)" />
+                        <option value="إيوو (Yiwu)" />
+                        <option value="تشينغداو (Qingdao)" />
+                        <option value="شنغهاي (Shanghai)" />
+                        <option value="نينغبو (Ningbo)" />
+                      </>
+                    )}
+                    {country === 'المملكة العربية السعودية' && (
+                      <>
+                        <option value="الرياض" />
+                        <option value="جدة" />
+                        <option value="الدمام" />
+                      </>
+                    )}
+                    {country === 'مصر' && (
+                      <>
+                        <option value="القاهرة" />
+                        <option value="الإسكندرية" />
+                      </>
+                    )}
+                    {country === 'تركيا' && (
+                      <>
+                        <option value="إسطنبول" />
+                        <option value="أنقرة" />
+                        <option value="مرسين" />
+                      </>
+                    )}
+                  </datalist>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">البريد الإلكتروني (إن وجد)</label>
+                  <input
+                    type="email"
+                    placeholder="info@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-left"
+                    dir="ltr"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">الرقم الضريبي (إن وجد)</label>
+                  <label className="block font-bold text-slate-700 mb-1">الرقم الضريبي / السجل التجاري</label>
                   <input
                     type="text"
-                    placeholder="TX-SD-XXXX"
+                    placeholder="TX-SD-XXXX أو رقم السجل"
                     value={taxNumber}
                     onChange={(e) => setTaxNumber(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
@@ -1146,6 +1398,234 @@ export const CustomerMasterView: React.FC = () => {
                   className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-[#EFF6FF] text-[#172033] font-bold text-xs cursor-pointer transition-colors"
                 >
                   إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT CUSTOMER MODAL */}
+      {showEditModal && selectedCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#172033]/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 text-right space-y-4 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-50 text-[#2563EB] rounded-xl">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">تعديل وتحديث بيانات العميل</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">الكود التجاري: {selectedCustomer.customerCode}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditCustomer} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">اسم الشركة / التاجر الرسمي *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editCompanyName}
+                    onChange={(e) => setEditCompanyName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الشخص المسؤول / المفوض *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editContactName}
+                    onChange={(e) => setEditContactName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">نوع النشاط التجاري</label>
+                  <select
+                    value={editBusinessType}
+                    onChange={(e) => setEditBusinessType(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-medium"
+                  >
+                    <option value="commercial">مستورد تجاري (Commercial Importer)</option>
+                    <option value="industrial">قطاع صناعي / مصنع (Industrial Factory)</option>
+                    <option value="individual">تاجر فردي / شخصي (Individual Trader)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">رقم الهاتف الأساسي *</label>
+                  <input
+                    type="tel"
+                    required
+                    dir="ltr"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-left"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">رقم WhatsApp للتواصل *</label>
+                  <input
+                    type="tel"
+                    required
+                    dir="ltr"
+                    value={editWhatsapp}
+                    onChange={(e) => setEditWhatsapp(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-left"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">البريد الإلكتروني</label>
+                  <input
+                    type="email"
+                    dir="ltr"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-left font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الدولة / الإقليم *</label>
+                  <select
+                    value={editCountry}
+                    onChange={(e) => {
+                      const newC = e.target.value;
+                      setEditCountry(newC);
+                      if (newC === 'السودان') setEditCity('بورتسودان');
+                      else if (newC === 'الإمارات العربية المتحدة') setEditCity('دبي');
+                      else if (newC === 'الصين') setEditCity('كوانزو (Guangzhou)');
+                      else if (newC === 'المملكة العربية السعودية') setEditCity('الرياض');
+                      else if (newC === 'مصر') setEditCity('القاهرة');
+                      else if (newC === 'تركيا') setEditCity('إسطنبول');
+                      else setEditCity('');
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-medium"
+                  >
+                    <option value="السودان">السودان (Sudan)</option>
+                    <option value="الإمارات العربية المتحدة">الإمارات العربية المتحدة (UAE)</option>
+                    <option value="الصين">الصين (China)</option>
+                    <option value="المملكة العربية السعودية">المملكة العربية السعودية (KSA)</option>
+                    <option value="مصر">مصر (Egypt)</option>
+                    <option value="تركيا">تركيا (Turkey)</option>
+                    <option value="قطر">قطر (Qatar)</option>
+                    <option value="سلطنة عمان">سلطنة عمان (Oman)</option>
+                    <option value="أخرى">دولة أخرى (International)</option>
+                  </select>
+                  {editCountry === 'أخرى' && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الدولة / البلد: *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مثال: تشاد، أوغندا، كندا، ألمانيا..."
+                        value={editCustomCountry}
+                        onChange={(e) => setEditCustomCountry(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-amber-300 bg-amber-50/40 text-xs font-bold"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">المدينة / المقر *</label>
+                  <input
+                    type="text"
+                    required
+                    list="edit-city-suggestions"
+                    value={editCity}
+                    onChange={(e) => setEditCity(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
+                  />
+                  <datalist id="edit-city-suggestions">
+                    <option value="بورتسودان" />
+                    <option value="الخرطوم" />
+                    <option value="أم درمان" />
+                    <option value="بحري" />
+                    <option value="عطبرة" />
+                    <option value="ود مدني" />
+                    <option value="كسلا" />
+                    <option value="القضارف" />
+                    <option value="كوستي" />
+                    <option value="دنقلا" />
+                    <option value="دبي" />
+                    <option value="الشارقة" />
+                    <option value="الرياض" />
+                    <option value="جدة" />
+                    <option value="القاهرة" />
+                  </datalist>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">العنوان التفصيلي / المستودع بالسودان</label>
+                  <input
+                    type="text"
+                    value={editAddress}
+                    onChange={(e) => setEditAddress(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الرقم الضريبي (TIN)</label>
+                  <input
+                    type="text"
+                    value={editTaxNumber}
+                    onChange={(e) => setEditTaxNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الرقم الوطني / السجل التجاري</label>
+                  <input
+                    type="text"
+                    value={editNationalId}
+                    onChange={(e) => setEditNationalId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">ملاحظات الحساب</label>
+                  <textarea
+                    rows={2}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#172033] font-bold text-xs cursor-pointer transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingEdit ? 'جاري حفظ التعديلات...' : 'تأكيد وحفظ التعديلات'}
                 </button>
               </div>
             </form>

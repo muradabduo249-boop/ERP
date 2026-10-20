@@ -24,9 +24,12 @@ import { DepartmentCode, PermissionCode, RoleCode, User } from '../../../types';
 export const SYSTEM_MODULES = [
   { id: 'dashboard', label: 'لوحة التحكم والقيادة', desc: 'مؤشرات الأداء والإحصائيات العامة' },
   { id: 'requests_backbone', label: 'الطلبات المركزية', desc: 'سجل الطلبات والربط بين الأقسام' },
+  { id: 'tasks_management', label: 'إدارة المهام والواجبات', desc: 'طوابير المهام ومواعيد الاستحقاق' },
   { id: 'customers_master', label: 'سجل العملاء', desc: 'إدارة وتوثيق بيانات العملاء والشركات' },
+  { id: 'suppliers_master', label: 'سجل الموردين والمصانع', desc: 'دليل المصانع المعتمدة بالصين والعالم' },
   { id: 'crm_leads', label: 'المبيعات والفرص (CRM)', desc: 'متابعة العملاء المحتملين والطلبات التسويقية' },
   { id: 'procurement', label: 'المشتريات والتوريد', desc: 'أوامر الشراء (PO) والمصانع ومطالبات الموردين' },
+  { id: 'products_catalog', label: 'كتالوج المنتجات والسلع', desc: 'إدارة الأصناف، الأسعار، والمواصفات' },
   { id: 'finance', label: 'المالية والخزينة', desc: 'سندات القبض، المدفوعات، والخزائن البنكية والنقدية' },
   { id: 'operations', label: 'العمليات والتخليص', desc: 'الشحن البحري، التخليص بميناء بورتسودان، والتفويج' },
   { id: 'audit_trail', label: 'سجل التدقيق والمراقبة', desc: 'متابعة كافة تحركات وسجلات النظام' },
@@ -80,7 +83,7 @@ export const RbacManagementView: React.FC = () => {
     setEditingUser(user);
     setName(user.name);
     setUsername(user.username || '');
-    setPin(user.pin || '1234');
+    setPin(''); // Leave empty so existing password hash is preserved unless explicitly changed
     setPhone(user.phone || '');
     setEmail(user.email || '');
     setDepartmentCode(user.departmentCode);
@@ -99,7 +102,10 @@ export const RbacManagementView: React.FC = () => {
     }
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const [successBanner, setSuccessBanner] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -111,8 +117,12 @@ export const RbacManagementView: React.FC = () => {
       setFormError('يرجى تحديد اسم المستخدم لتسجيل الدخول');
       return;
     }
-    if (!pin.trim() || pin.length < 3) {
-      setFormError('رمز التحقق / PIN يجب أن يتكون من 3 أرقام على الأقل');
+    if (!editingUser && (!pin.trim() || pin.trim().length < 3)) {
+      setFormError('رمز التحقق / PIN يجب أن يتكون من 3 أرقام على الأقل للحساب الجديد');
+      return;
+    }
+    if (editingUser && pin.trim() && pin.trim().length < 3) {
+      setFormError('رمز التحقق الجديد يجب ألا يقل عن 3 أرقام إذا رغبت في تغييره');
       return;
     }
 
@@ -131,56 +141,71 @@ export const RbacManagementView: React.FC = () => {
     const dept = departments.find((d) => d.code === departmentCode);
     const role = roles.find((r) => r.code === roleCode);
 
-    if (editingUser) {
-      // Update
-      updateUser(editingUser.id, {
-        name: name.trim(),
-        username: cleanUsername,
-        pin: pin.trim(),
-        phone: phone.trim(),
-        email: email.trim(),
-        departmentCode,
-        departmentNameAr: dept?.nameAr || editingUser.departmentNameAr,
-        departmentId: dept?.id || editingUser.departmentId,
-        roleCode,
-        roleNameAr: role?.nameAr || editingUser.roleNameAr,
-        roleId: role?.id || editingUser.roleId,
-        status,
-        allowedModules: selectedModules,
-      });
-    } else {
-      // Create new
-      const newUser: User = {
-        id: `user-${Date.now().toString().slice(-4)}`,
-        name: name.trim(),
-        username: cleanUsername,
-        pin: pin.trim(),
-        phone: phone.trim(),
-        email: email.trim() || `${cleanUsername}@sahla.sd`,
-        departmentCode,
-        departmentNameAr: dept?.nameAr || 'العمليات',
-        departmentId: dept?.id || 'dept-ops-005',
-        roleCode,
-        roleNameAr: role?.nameAr || 'موظف عمليات',
-        roleId: role?.id || 'role-operations',
-        status,
-        allowedModules: selectedModules,
-        createdAt: new Date().toISOString(),
-      };
-      addUser(newUser);
-    }
+    try {
+      setIsSaving(true);
+      if (editingUser) {
+        // Update
+        const updates: Partial<User> = {
+          name: name.trim(),
+          username: cleanUsername,
+          phone: phone.trim(),
+          email: email.trim(),
+          departmentCode,
+          departmentNameAr: dept?.nameAr || editingUser.departmentNameAr,
+          departmentId: dept?.id || editingUser.departmentId,
+          roleCode,
+          roleNameAr: role?.nameAr || editingUser.roleNameAr,
+          roleId: role?.id || editingUser.roleId,
+          status,
+          allowedModules: selectedModules,
+        };
+        if (pin.trim()) {
+          updates.pin = pin.trim();
+        }
+        await updateUser(editingUser.id, updates);
+        setSuccessBanner(`تم تحديث بيانات الموظف [${name.trim()}] بنجاح وحفظها بقاعدة البيانات`);
+      } else {
+        // Create new
+        const newUser: User = {
+          id: `user-${Date.now().toString().slice(-4)}`,
+          name: name.trim(),
+          username: cleanUsername,
+          pin: pin.trim(),
+          phone: phone.trim(),
+          email: email.trim() || `${cleanUsername}@sahla.sd`,
+          departmentCode,
+          departmentNameAr: dept?.nameAr || 'العمليات',
+          departmentId: dept?.id || 'dept-ops-005',
+          roleCode,
+          roleNameAr: role?.nameAr || 'موظف عمليات',
+          roleId: role?.id || 'role-operations',
+          status,
+          allowedModules: selectedModules,
+          createdAt: new Date().toISOString(),
+        };
+        await addUser(newUser, pin.trim());
+        setSuccessBanner(`تم إنشاء وتفعيل حساب الموظف [${name.trim()}] في قاعدة البيانات بنجاح.`);
+      }
 
-    setIsAddModalOpen(false);
+      setIsAddModalOpen(false);
+      setTimeout(() => setSuccessBanner(null), 5000);
+    } catch (err: any) {
+      setFormError(err.message || 'حدث خطأ أثناء حفظ الموظف');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeleteUser = (userId: string, userName: string) => {
+  const handleDeleteUser = async (userId: string, userName: string) => {
     if (userId === currentUser?.id) {
       alert('لا يمكنك حذف الحساب النشط الحالي للمدير العام');
       return;
     }
     if (window.confirm(`تأكيد أمني: هل أنت متأكد من حذف الموظف [${userName}] نهائياً من النظام؟ لن يتمكن من تسجيل الدخول بعد ذلك.`)) {
       try {
-        deleteUser(userId);
+        await deleteUser(userId);
+        setSuccessBanner(`تم حذف الموظف [${userName}] بنجاح`);
+        setTimeout(() => setSuccessBanner(null), 4000);
       } catch (err: any) {
         alert(err.message || 'حدث خطأ أثناء محاولة حذف الموظف');
       }
@@ -257,6 +282,13 @@ export const RbacManagementView: React.FC = () => {
           مصفوفة أذونات الأدوار
         </button>
       </div>
+
+      {successBanner && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{successBanner}</span>
+        </div>
+      )}
 
       {/* TAB 1: EMPLOYEES DIRECTORY WITH CUSTOM PERMISSIONS */}
       {activeTab === 'employees' && (
@@ -497,16 +529,24 @@ export const RbacManagementView: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-700">رمز التحقق السري (PIN / Password):</label>
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-700">رمز التحقق السري (PIN / Password):</label>
+                    {editingUser && (
+                      <span className="text-[10px] text-amber-700 font-medium">اختياري عند التعديل</span>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    required
+                    required={!editingUser}
                     value={pin}
                     onChange={(e) => setPin(e.target.value)}
-                    placeholder="1234"
+                    placeholder={editingUser ? 'اتركه فارغاً للاحتفاظ بكلمة المرور الحالية' : '1234'}
                     maxLength={10}
                     className="w-full p-2.5 rounded-xl border border-slate-200 font-mono font-black text-center tracking-widest focus:border-amber-400 outline-hidden text-amber-900 bg-amber-50/50"
                   />
+                  {editingUser && (
+                    <p className="text-[10px] text-slate-400">إذا تُرك فارغاً فلن يتم تغيير كلمة المرور الحالية للحساب.</p>
+                  )}
                 </div>
 
                 <div className="space-y-1">

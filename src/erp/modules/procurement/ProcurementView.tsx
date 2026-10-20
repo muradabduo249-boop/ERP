@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShoppingBag,
   Plus,
@@ -47,6 +47,8 @@ import {
 } from '../../../types';
 import { ErpDocumentPrintModal, PrintableDocType } from '../../components/ErpDocumentPrintModal';
 import { exportToCsv } from '../../../lib/exportUtils';
+import { SearchableSelector, SearchOption } from '../../components/SearchableSelector';
+import { SupplierMasterView } from './SupplierMasterView';
 
 type ProcurementSubTab = 'invoices' | 'suppliers' | 'pos' | 'rfqs' | 'analytics';
 
@@ -89,6 +91,169 @@ export const ProcurementView: React.FC = () => {
   const quotes = erpEngine.getQuotes();
   const requests = erpEngine.getRequests();
 
+  // Live Database Sync for Suppliers & Products
+  const [liveSuppliers, setLiveSuppliers] = useState<ErpSupplier[]>([]);
+  const [liveProducts, setLiveProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchAuxData = async () => {
+      try {
+        const token = localStorage.getItem('sahla_erp_auth_token_v1');
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+        const [suppRes, prodRes] = await Promise.all([
+          fetch('/api/suppliers?limit=100', { headers, credentials: 'include' }).catch(() => null),
+          fetch('/api/products?limit=100', { headers, credentials: 'include' }).catch(() => null),
+        ]);
+        if (suppRes && suppRes.ok) {
+          const sData = await suppRes.json();
+          if (sData.success && Array.isArray(sData.data)) {
+            setLiveSuppliers(
+              sData.data.map((s: any) => ({
+                id: s.id,
+                supplierCode: s.supplierCode || `SUP-${s.id.slice(-4)}`,
+                name: s.name,
+                tradeNameEn: s.tradeNameEn || '',
+                contactPerson: s.contactPerson || '',
+                country: s.country || 'الصين',
+                city: s.city || '',
+                phone: s.phone || '',
+                whatsapp: s.whatsapp || '',
+                wechat: s.wechat || '',
+                email: s.email || '',
+                address: s.address || '',
+                rating: s.rating || 5,
+                categories: s.categories || ['توريد عام'],
+                status: s.status || 'verified',
+                paymentTerms: s.paymentTerms || '',
+                notes: s.notes || '',
+              }))
+            );
+          }
+        }
+        if (prodRes && prodRes.ok) {
+          const pData = await prodRes.json();
+          if (pData.success && Array.isArray(pData.data)) {
+            setLiveProducts(pData.data);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load aux procurement data', e);
+      }
+    };
+    fetchAuxData();
+  }, [sessionToken, activeSubTab]);
+
+  const combinedSuppliers = useMemo(() => {
+    const map = new Map<string, ErpSupplier>();
+    suppliers.forEach((s) => map.set(s.id, s));
+    liveSuppliers.forEach((s) => {
+      if (!map.has(s.id)) {
+        map.set(s.id, s);
+      }
+    });
+    return Array.from(map.values());
+  }, [suppliers, liveSuppliers]);
+
+  const supplierOptions: SearchOption[] = useMemo(() => {
+    return combinedSuppliers.map((s) => ({
+      id: s.id,
+      title: s.name,
+      code: s.supplierCode,
+      subtitle: `${s.country} - ${s.city || ''} ${s.phone ? `(${s.phone})` : ''}`,
+      badge: s.country,
+      meta: s,
+    }));
+  }, [combinedSuppliers]);
+
+  const requestOptions: SearchOption[] = useMemo(() => {
+    return requests.map((r) => ({
+      id: r.id,
+      title: `${r.requestCode} - ${r.customerName}`,
+      code: r.requestCode,
+      subtitle: `${r.title || 'طلب توريد وشحن'} | الحالة: ${r.status}`,
+      badge: r.requestCode,
+      meta: r,
+    }));
+  }, [requests]);
+
+  const poOptions: SearchOption[] = useMemo(() => {
+    return [
+      { id: '', title: 'بدون أمر شراء (فاتورة توريد مباشرة)', code: 'مباشر' },
+      ...purchaseOrders.map((p) => ({
+        id: p.id,
+        title: `${p.poCode} - ${p.supplierName}`,
+        code: p.poCode,
+        subtitle: `${Number(p.totalAmount).toLocaleString()} ${p.currency} | ${p.itemsSummary?.slice(0, 40) || ''}`,
+        badge: `${p.totalAmount} ${p.currency}`,
+        meta: p,
+      })),
+    ];
+  }, [purchaseOrders]);
+
+  const customers = erpEngine.getCustomers();
+  const [invCustomerId, setInvCustomerId] = useState('');
+  const [supplierAutoNotice, setSupplierAutoNotice] = useState<string | null>(null);
+
+  const customerOptions: SearchOption[] = useMemo(() => {
+    return customers.map((c) => ({
+      id: c.id,
+      title: c.companyName || c.tradeName || c.name || 'عميل',
+      code: c.customerCode || '',
+      subtitle: `${c.primaryPhone || c.phone || ''} | ${c.city || ''} (${c.country || 'السودان'})`,
+      badge: c.customerCode || 'عميل',
+      meta: c,
+    }));
+  }, [customers]);
+
+  const productOptions: SearchOption[] = useMemo(() => {
+    return liveProducts.map((p) => {
+      const sup = combinedSuppliers.find((s) => s.id === p.supplierId);
+      return {
+        id: p.id,
+        title: `${p.nameAr}`,
+        code: p.sku,
+        subtitle: `${Number(p.costPrice || 0).toLocaleString()} ${p.defaultCurrency || 'USD'} | الوحدة: ${p.unit || 'قطعة'}${sup ? ` | المورد: ${sup.name}` : ''}`,
+        badge: p.sku,
+        meta: { ...p, supplier: sup },
+      };
+    });
+  }, [liveProducts, combinedSuppliers]);
+
+  const handleSelectCustomerForInvoice = (customerId: string) => {
+    setInvCustomerId(customerId);
+    const matchedReq = requests.find((r) => r.customerId === customerId);
+    if (matchedReq) {
+      setInvRequestId(matchedReq.id);
+    }
+  };
+
+  const handleSelectProductForInvoice = (productId: string) => {
+    const prod = liveProducts.find((p) => p.id === productId);
+    if (!prod) return;
+
+    // Auto-link supplier if product has a linked supplier
+    if (prod.supplierId) {
+      const matchingSup = combinedSuppliers.find((s) => s.id === prod.supplierId);
+      if (matchingSup) {
+        setInvSupplierId(matchingSup.id);
+        setSupplierAutoNotice(`تم تحديد المورد المعتمد للمنتج تلقائياً: ${matchingSup.name} (${matchingSup.supplierCode})`);
+        setTimeout(() => setSupplierAutoNotice(null), 6000);
+      }
+    }
+
+    setInvItems((prev) => [
+      ...prev,
+      {
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        description: `[${prod.sku}] ${prod.nameAr}${prod.nameEn ? ` - ${prod.nameEn}` : ''}`,
+        quantity: 1,
+        unit: prod.unit || 'قطعة',
+        unitPrice: Number(prod.costPrice) || 0,
+        totalPrice: Number(prod.costPrice) || 0,
+      },
+    ]);
+  };
+
   // ----------------------------------------------------
   // FORM STATES: New Purchase Invoice
   // ----------------------------------------------------
@@ -126,6 +291,7 @@ export const ProcurementView: React.FC = () => {
   const [supTradeNameEn, setSupTradeNameEn] = useState('');
   const [supContact, setSupContact] = useState('');
   const [supCountry, setSupCountry] = useState('الصين');
+  const [supCustomCountry, setSupCustomCountry] = useState('');
   const [supCity, setSupCity] = useState('فوشان / قوانغتشو');
   const [supPhone, setSupPhone] = useState('');
   const [supWhatsapp, setSupWhatsapp] = useState('');
@@ -238,7 +404,7 @@ export const ProcurementView: React.FC = () => {
   // ----------------------------------------------------
   const handleCreatePurchaseInvoice = (e: React.FormEvent) => {
     e.preventDefault();
-    const sup = suppliers.find((s) => s.id === invSupplierId);
+    const sup = combinedSuppliers.find((s) => s.id === invSupplierId);
     if (!sup) {
       alert('يرجى اختيار المورد أولاً');
       return;
@@ -326,7 +492,7 @@ export const ProcurementView: React.FC = () => {
           name: supName.trim(),
           tradeNameEn: supTradeNameEn.trim(),
           contactPerson: supContact.trim(),
-          country: supCountry,
+          country: supCountry === 'أخرى' && supCustomCountry.trim() ? supCustomCountry.trim() : supCountry,
           city: supCity.trim(),
           phone: supPhone.trim(),
           whatsapp: supWhatsapp.trim(),
@@ -348,7 +514,7 @@ export const ProcurementView: React.FC = () => {
           name: supName.trim(),
           tradeNameEn: supTradeNameEn.trim(),
           contactPerson: supContact.trim() || 'مدير المبيعات والتصدير',
-          country: supCountry,
+          country: supCountry === 'أخرى' && supCustomCountry.trim() ? supCustomCountry.trim() : supCountry,
           city: supCity.trim() || 'الصين',
           phone: supPhone.trim() || '+86 000 0000 0000',
           whatsapp: supWhatsapp.trim(),
@@ -444,7 +610,7 @@ export const ProcurementView: React.FC = () => {
       id: 'req-manual',
       requestCode: 'REQ-DIRECT',
     };
-    const sup = suppliers.find((s) => s.id === poSupplierId) || {
+    const sup = combinedSuppliers.find((s) => s.id === poSupplierId) || {
       id: 'sup-manual',
       name: 'مورد معتمد خارجي',
     };
@@ -580,7 +746,7 @@ export const ProcurementView: React.FC = () => {
     return true;
   });
 
-  const filteredSuppliers = suppliers.filter((sup) => {
+  const filteredSuppliers = combinedSuppliers.filter((sup) => {
     if (supplierCountryFilter !== 'all' && sup.country !== supplierCountryFilter) return false;
     if (supplierSearch.trim()) {
       const q = supplierSearch.toLowerCase();
@@ -1113,232 +1279,7 @@ export const ProcurementView: React.FC = () => {
       {/* ========================================================================= */}
       {activeSubTab === 'suppliers' && (
         <div className="space-y-4">
-          {/* Supplier Filters */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
-            <div className="relative w-full md:w-96">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="بحث باسم المصنع، جهة الاتصال، رقم الهاتف، أو كود المورد..."
-                value={supplierSearch}
-                onChange={(e) => setSupplierSearch(e.target.value)}
-                className="w-full pl-3 pr-9 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-amber-400 outline-hidden font-medium"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-              <span className="text-slate-500 font-bold shrink-0">دولة المصنع:</span>
-              <button
-                onClick={() => setSupplierCountryFilter('all')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                  supplierCountryFilter === 'all'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                الكل ({suppliers.length})
-              </button>
-              <button
-                onClick={() => setSupplierCountryFilter('الصين')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                  supplierCountryFilter === 'الصين'
-                    ? 'bg-amber-500 text-slate-950 font-black'
-                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-                }`}
-              >
-                الصين 🇨🇳
-              </button>
-              <button
-                onClick={() => setSupplierCountryFilter('الإمارات')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                  supplierCountryFilter === 'الإمارات'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                }`}
-              >
-                الإمارات 🇦🇪
-              </button>
-              <button
-                onClick={() => setSupplierCountryFilter('السعودية')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                  supplierCountryFilter === 'السعودية'
-                    ? 'bg-green-700 text-white'
-                    : 'bg-green-50 text-green-800 hover:bg-green-100'
-                }`}
-              >
-                السعودية 🇸🇦
-              </button>
-
-              <button
-                onClick={handleExportSuppliers}
-                title="تصدير دليل الموردين والمصانع إلى Excel / CSV مع دعم الترميز العربي"
-                className="px-3 py-1.5 rounded-lg font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 flex items-center gap-1.5 shrink-0 transition-all"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                <span>تصدير Excel</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Supplier Grid */}
-          {filteredSuppliers.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center space-y-3">
-              <Building2 className="w-12 h-12 text-slate-300 mx-auto" />
-              <div className="text-base font-bold text-slate-800">لا يوجد موردون مسجلون حتى الآن</div>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                دليل الموردين والمصانع فارغ وجاهز لتسجيل الموردين المعتمدين في الصين، الإمارات، والسعودية.
-              </p>
-              <button
-                onClick={() => {
-                  setEditingSupplier(null);
-                  setSupName('');
-                  setSupTradeNameEn('');
-                  setSupContact('');
-                  setSupPhone('');
-                  setSupWhatsapp('');
-                  setSupWechat('');
-                  setSupEmail('');
-                  setSupAddress('');
-                  setSupBankIban('');
-                  setShowNewSupplierModal(true);
-                }}
-                className="mt-2 px-4 py-2 rounded-xl bg-[#2563EB] text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-xs hover:bg-[#1D4ED8] transition-all"
-              >
-                <Plus className="w-4 h-4 text-[#F5B800]" />
-                <span>+ تسجيل أول مورد / مصنع</span>
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredSuppliers.map((sup) => {
-              const supInvoices = purchaseInvoices.filter((i) => i.supplierId === sup.id);
-              const supPos = purchaseOrders.filter((p) => p.supplierId === sup.id);
-              const totalSupInvoiced = supInvoices.reduce((acc, i) => acc + i.totalAmount, 0);
-              const totalSupPaid = supInvoices.reduce((acc, i) => acc + (i.paidAmount || 0), 0);
-              const totalSupRemaining = Math.max(0, totalSupInvoiced - totalSupPaid);
-
-              return (
-                <div
-                  key={sup.id}
-                  className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between hover:border-amber-400 transition-all space-y-4"
-                >
-                  <div className="space-y-3">
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                            {sup.supplierCode}
-                          </span>
-                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                            مورد معتمد ✓
-                          </span>
-                        </div>
-                        <h3 className="font-black text-slate-900 text-base mt-1.5">{sup.name}</h3>
-                        {sup.tradeNameEn && (
-                          <div className="font-mono text-slate-400 text-xs">{sup.tradeNameEn}</div>
-                        )}
-                      </div>
-
-                      {/* Rating */}
-                      <div className="flex items-center gap-0.5 text-amber-400">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <Star
-                            key={i}
-                            className={`w-3.5 h-3.5 ${
-                              i < (sup.rating || 5) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Location & Contact Info */}
-                    <div className="p-3 rounded-xl bg-slate-50 space-y-1.5 text-xs text-slate-700 border border-slate-100">
-                      <div className="flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-bold text-slate-900">{sup.country}</span>
-                        <span className="text-slate-400">•</span>
-                        <span className="text-slate-600 truncate">{sup.city}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/60">
-                        <span className="text-slate-500">المسؤول: <b>{sup.contactPerson}</b></span>
-                        <span className="font-mono text-slate-700">{sup.phone}</span>
-                      </div>
-                      {sup.wechat && (
-                        <div className="text-[11px] text-emerald-800 font-mono flex items-center gap-1">
-                          <span className="text-slate-400">WeChat:</span>
-                          <span className="font-bold">{sup.wechat}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Categories Tags */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {sup.categories?.map((cat, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium"
-                        >
-                          {cat}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* Financial Summary with this Supplier */}
-                    <div className="p-2.5 rounded-xl bg-slate-900 text-white text-xs flex items-center justify-between font-mono">
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-sans">إجمالي الفواتير:</div>
-                        <div className="font-bold text-sm text-white">
-                          {totalSupInvoiced.toLocaleString()} {supInvoices[0]?.currency || 'USD'}
-                        </div>
-                      </div>
-                      <div className="text-left">
-                        <div className="text-[10px] text-slate-400 font-sans">المتبقي له:</div>
-                        <div className="font-bold text-sm text-[#F5B800]">
-                          {totalSupRemaining.toLocaleString()} {supInvoices[0]?.currency || 'USD'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions Bar */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => setSelectedSupplierProfile(sup)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>ملف المورد</span>
-                    </button>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => {
-                          setInvSupplierId(sup.id);
-                          setShowNewInvoiceModal(true);
-                        }}
-                        title="إصدار فاتورة مشتريات لهذا المورد"
-                        className="px-2.5 py-1.5 rounded-xl bg-[#F5B800] hover:bg-[#E0A600] text-slate-950 font-bold text-xs flex items-center gap-1"
-                      >
-                        <Receipt className="w-3.5 h-3.5" />
-                        <span>+ فاتورة</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleOpenEditSupplier(sup)}
-                        title="تعديل بيانات المورد"
-                        className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          )}
+          <SupplierMasterView />
         </div>
       )}
 
@@ -1626,38 +1567,38 @@ export const ProcurementView: React.FC = () => {
 
             <form onSubmit={handleCreatePurchaseInvoice} className="p-6 space-y-4 overflow-y-auto text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Customer Selection */}
+                <div>
+                  <SearchableSelector
+                    label="العميل صاحب البضاعة / الشحنة (بحث بالاسم أو الكود)"
+                    options={customerOptions}
+                    value={invCustomerId}
+                    onChange={handleSelectCustomerForInvoice}
+                    placeholder="ابحث باسم العميل أو كود العميل SH-C-XXXX..."
+                  />
+                </div>
+
                 {/* Supplier Selection */}
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">المورد / المصنع المعتمد: *</label>
-                  <select
-                    value={invSupplierId}
-                    onChange={(e) => setInvSupplierId(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold focus:bg-white outline-hidden"
+                  <SearchableSelector
+                    label="المورد / المصنع المعتمد"
                     required
-                  >
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.country}) - {s.supplierCode}
-                      </option>
-                    ))}
-                  </select>
+                    options={supplierOptions}
+                    value={invSupplierId}
+                    onChange={(val) => setInvSupplierId(val)}
+                    placeholder="ابحث باسم المصنع، كود المورد، أو الدولة..."
+                  />
                 </div>
 
                 {/* Link to Purchase Order (Optional) */}
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">ربط بأمر الشراء PO (اختياري):</label>
-                  <select
+                  <SearchableSelector
+                    label="ربط بأمر الشراء PO (اختياري)"
+                    options={poOptions}
                     value={invPoId}
-                    onChange={(e) => handleSelectPoForInvoice(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono focus:bg-white outline-hidden"
-                  >
-                    <option value="">بدون أمر شراء (فاتورة توريد مباشرة)</option>
-                    {purchaseOrders.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.poCode} - {p.supplierName} ({p.totalAmount} {p.currency})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => handleSelectPoForInvoice(val)}
+                    placeholder="ابحث برقم أمر الشراء أو المورد..."
+                  />
                 </div>
 
                 {/* Vendor Invoice Number */}
@@ -1675,18 +1616,13 @@ export const ProcurementView: React.FC = () => {
 
                 {/* Link to Central Request */}
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">الطلب المركزي المرتبط (REQ):</label>
-                  <select
+                  <SearchableSelector
+                    label="الطلب المركزي المرتبط (REQ)"
+                    options={requestOptions}
                     value={invRequestId}
-                    onChange={(e) => setInvRequestId(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono focus:bg-white outline-hidden"
-                  >
-                    {requests.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.requestCode} - {r.customerName} ({r.title})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setInvRequestId(val)}
+                    placeholder="ابحث برقم الطلب أو اسم العميل..."
+                  />
                 </div>
 
                 {/* Currency */}
@@ -1719,18 +1655,38 @@ export const ProcurementView: React.FC = () => {
               </div>
 
               {/* Items Table */}
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <div className="flex items-center justify-between">
+              <div className="space-y-3 pt-3 border-t border-slate-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <span className="font-bold text-slate-800 text-sm">بنود وأصناف الفاتورة:</span>
-                  <button
-                    type="button"
-                    onClick={handleAddItemToInvoice}
-                    className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>إضافة بند صنف</span>
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {liveProducts.length > 0 && (
+                      <div className="w-72">
+                        <SearchableSelector
+                          label=""
+                          options={productOptions}
+                          value=""
+                          onChange={handleSelectProductForInvoice}
+                          placeholder="+ إضافة منتج بالاسم أو الكود (PRD-XXXX)..."
+                        />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleAddItemToInvoice}
+                      className="px-3 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>إضافة بند يدوي</span>
+                    </button>
+                  </div>
                 </div>
+
+                {supplierAutoNotice && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{supplierAutoNotice}</span>
+                  </div>
+                )}
 
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <table className="w-full text-right text-xs">
@@ -1750,10 +1706,23 @@ export const ProcurementView: React.FC = () => {
                             <input
                               type="text"
                               required
-                              placeholder="اسم الصنف أو التجهيز..."
+                              list="catalog-products-list"
+                              placeholder="اسم الصنف أو اختر من الكتالوج..."
                               value={item.description}
-                              onChange={(e) => handleUpdateInvoiceItem(idx, 'description', e.target.value)}
-                              className="w-full p-1.5 rounded-lg border border-slate-200"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleUpdateInvoiceItem(idx, 'description', val);
+                                const matched = liveProducts.find(
+                                  (p) =>
+                                    p.nameAr === val ||
+                                    `[${p.sku}] ${p.nameAr}` === val ||
+                                    `${p.sku} - ${p.nameAr}` === val
+                                );
+                                if (matched && matched.costPrice) {
+                                  handleUpdateInvoiceItem(idx, 'unitPrice', Number(matched.costPrice) || 0);
+                                }
+                              }}
+                              className="w-full p-1.5 rounded-lg border border-slate-200 font-medium"
                             />
                           </td>
                           <td className="p-2">
@@ -1793,6 +1762,14 @@ export const ProcurementView: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+
+                <datalist id="catalog-products-list">
+                  {liveProducts.map((p) => (
+                    <option key={p.id} value={`[${p.sku}] ${p.nameAr}`}>
+                      سعر التكلفة: {p.costPrice} {p.defaultCurrency || 'USD'}
+                    </option>
+                  ))}
+                </datalist>
 
                 <div className="flex justify-end p-2 text-sm font-black text-slate-900">
                   <span>إجمالي الفاتورة: </span>
@@ -1886,7 +1863,7 @@ export const ProcurementView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-[#F5B800]" />
                 <h3 className="font-black text-base sm:text-lg">
-                  {editingSupplier ? `تعديل بيانات المورد [${editingSupplier.supplierCode}]` : 'إضافة مورد / مصنع معتمد جديد في الصين أو الخليج'}
+                  {editingSupplier ? `تعديل بيانات المورد [${editingSupplier.supplierCode}]` : 'إضافة مورد / مصنع عالمي معتمد'}
                 </h3>
               </div>
               <button
@@ -1926,15 +1903,52 @@ export const ProcurementView: React.FC = () => {
                   <label className="block font-bold text-slate-700 mb-1">الدولة: *</label>
                   <select
                     value={supCountry}
-                    onChange={(e) => setSupCountry(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSupCountry(val);
+                      if (val === 'الصين') setSupCity('كوانزو (Guangzhou)');
+                      else if (val === 'الإمارات') setSupCity('دبي (Dubai)');
+                      else if (val === 'تركيا') setSupCity('إسطنبول (Istanbul)');
+                      else if (val === 'السعودية') setSupCity('الرياض (Riyadh)');
+                      else if (val === 'مصر') setSupCity('القاهرة (Cairo)');
+                      else if (val === 'الهند') setSupCity('مومباي (Mumbai)');
+                      else if (val === 'فيتنام') setSupCity('هانوي (Hanoi)');
+                      else if (val === 'ألمانيا') setSupCity('فرانكفورت (Frankfurt)');
+                      else if (val === 'إيطاليا') setSupCity('ميلانو (Milano)');
+                      else if (val === 'الولايات المتحدة') setSupCity('نيويورك (New York)');
+                      else if (val === 'المملكة المتحدة') setSupCity('لندن (London)');
+                      else if (val === 'السودان') setSupCity('بورتسودان (Port Sudan)');
+                      else setSupCity('');
+                    }}
                     className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold"
                   >
                     <option value="الصين">الصين 🇨🇳 (China)</option>
                     <option value="الإمارات">الإمارات 🇦🇪 (UAE)</option>
-                    <option value="السعودية">السعودية 🇸🇦 (Saudi Arabia)</option>
                     <option value="تركيا">تركيا 🇹🇷 (Turkey)</option>
+                    <option value="السعودية">السعودية 🇸🇦 (Saudi Arabia)</option>
+                    <option value="مصر">مصر 🇪🇬 (Egypt)</option>
                     <option value="الهند">الهند 🇮🇳 (India)</option>
+                    <option value="فيتنام">فيتنام 🇻🇳 (Vietnam)</option>
+                    <option value="ألمانيا">ألمانيا 🇩🇪 (Germany)</option>
+                    <option value="إيطاليا">إيطاليا 🇮🇹 (Italy)</option>
+                    <option value="الولايات المتحدة">الولايات المتحدة 🇺🇸 (USA)</option>
+                    <option value="المملكة المتحدة">المملكة المتحدة 🇬🇧 (UK)</option>
+                    <option value="السودان">السودان 🇸🇩 (Sudan)</option>
+                    <option value="أخرى">دولة أخرى (International Factory)</option>
                   </select>
+                  {supCountry === 'أخرى' && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الدولة / البلد: *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مثال: البرازيل، ماليزيا، بولندا، إسبانيا..."
+                        value={supCustomCountry}
+                        onChange={(e) => setSupCustomCountry(e.target.value)}
+                        className="w-full p-2 rounded-xl border border-amber-300 bg-amber-50/40 text-xs font-bold"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -2437,35 +2451,23 @@ export const ProcurementView: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreatePo} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">الطلب المركزي المرتبط (REQ):</label>
-                <select
-                  value={poRequestId}
-                  onChange={(e) => setPoRequestId(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono"
-                >
-                  {requests.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.requestCode} - {r.customerName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SearchableSelector
+                label="الطلب المركزي المرتبط (REQ)"
+                required
+                options={requestOptions}
+                value={poRequestId}
+                onChange={(val) => setPoRequestId(val)}
+                placeholder="ابحث برقم الطلب أو اسم العميل..."
+              />
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">المورد / المصنع المعتمد:</label>
-                <select
-                  value={poSupplierId}
-                  onChange={(e) => setPoSupplierId(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold"
-                >
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.country})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SearchableSelector
+                label="المورد / المصنع المعتمد"
+                required
+                options={supplierOptions}
+                value={poSupplierId}
+                onChange={(val) => setPoSupplierId(val)}
+                placeholder="ابحث بالمصنع، كود المورد، أو الدولة..."
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2494,9 +2496,34 @@ export const ProcurementView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">بيان وتفاصيل البضاعة المطلوبة:</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700">بيان وتفاصيل البضاعة المطلوبة: *</label>
+                  {liveProducts.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const prod = liveProducts.find((p) => p.id === e.target.value);
+                        if (prod) {
+                          const itemLine = `[${prod.sku}] ${prod.nameAr}`;
+                          setPoItemsSummary((prev) => (prev ? `${prev}\n• ${itemLine}` : `• ${itemLine}`));
+                          if (prod.costPrice && Number(prod.costPrice) > 0) {
+                            setPoAmount((prev) => (prev > 0 ? prev + Number(prod.costPrice) : Number(prod.costPrice)));
+                          }
+                        }
+                      }}
+                      className="text-[11px] p-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 font-bold cursor-pointer"
+                    >
+                      <option value="">+ إضافة صنف من الكتالوج...</option>
+                      {liveProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.sku} - {p.nameAr}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
                 <textarea
-                  rows={2}
+                  rows={3}
                   required
                   placeholder="مواصفات البضاعة والكميات..."
                   value={poItemsSummary}

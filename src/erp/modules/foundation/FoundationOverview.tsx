@@ -92,7 +92,7 @@ export const FoundationOverview: React.FC<{ onNavigateTab: (tab: any) => void }>
       tab: 'universal_attachments',
     },
     {
-      title: 'الطلب العمود الفقري للنظام (Request Backbone)',
+      title: 'الطلب التشغيلي المركزي',
       desc: 'كيان الطلب يمثل رأس المعاملة الرابط لكافة الأقسام، دون تكديس حقول التخليص والشراء والمالية في جدول واحد.',
       status: 'مكتمل ومطبق',
       icon: GitBranch,

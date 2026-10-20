@@ -52,12 +52,14 @@ export const ProductCatalogView: React.FC = () => {
 
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string; country?: string; supplierCode?: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Modals
@@ -70,6 +72,7 @@ export const ProductCatalogView: React.FC = () => {
   const [nameAr, setNameAr] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [supplierId, setSupplierId] = useState('');
   const [description, setDescription] = useState('');
   const [unit, setUnit] = useState('pcs');
   const [defaultCurrency, setDefaultCurrency] = useState('USD');
@@ -77,6 +80,7 @@ export const ProductCatalogView: React.FC = () => {
   const [sellingPrice, setSellingPrice] = useState('0.00');
   const [minOrderQty, setMinOrderQty] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Category Form State
   const [catCode, setCatCode] = useState('');
@@ -88,10 +92,13 @@ export const ProductCatalogView: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      const token = sessionToken || localStorage.getItem('sahla_erp_auth_token_v1');
+      const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-      const [prodsRes, catsRes] = await Promise.all([
-        fetch('/api/products', { credentials: 'include' }),
-        fetch('/api/products/categories', { credentials: 'include' }),
+      const [prodsRes, catsRes, suppsRes] = await Promise.all([
+        fetch('/api/products', { headers: authHeader, credentials: 'include' }),
+        fetch('/api/products/categories', { headers: authHeader, credentials: 'include' }),
+        fetch('/api/suppliers?limit=100', { headers: authHeader, credentials: 'include' }).catch(() => null),
       ]);
 
       const prodsData = await prodsRes.json();
@@ -103,6 +110,12 @@ export const ProductCatalogView: React.FC = () => {
       if (catsData.success) {
         setCategories(catsData.data || []);
       }
+      if (suppsRes && suppsRes.ok) {
+        const suppsData = await suppsRes.json();
+        if (suppsData.success) {
+          setSuppliers(suppsData.data || []);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'فشل في تحميل بيانات كتالوج المنتجات');
     } finally {
@@ -112,23 +125,29 @@ export const ProductCatalogView: React.FC = () => {
 
   useEffect(() => {
     fetchCatalogData();
-  }, []);
+  }, [sessionToken]);
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nameAr.trim()) return;
+    setModalError(null);
 
     try {
       setSubmitting(true);
+      const token = sessionToken || localStorage.getItem('sahla_erp_auth_token_v1');
       const res = await fetch('/api/products', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         credentials: 'include',
         body: JSON.stringify({
           sku: sku.trim() || undefined,
           nameAr: nameAr.trim(),
           nameEn: nameEn.trim() || undefined,
           categoryId: categoryId || undefined,
+          supplierId: supplierId || undefined,
           description: description.trim() || undefined,
           unit,
           defaultCurrency,
@@ -147,14 +166,17 @@ export const ProductCatalogView: React.FC = () => {
       setSku('');
       setNameAr('');
       setNameEn('');
+      setCategoryId('');
+      setSupplierId('');
       setDescription('');
       setCostPrice('0.00');
       setSellingPrice('0.00');
       setMinOrderQty(1);
+      setModalError(null);
       setShowAddProductModal(false);
       fetchCatalogData();
     } catch (err: any) {
-      alert(`خطأ: ${err.message}`);
+      setModalError(err.message || 'حدث خطأ أثناء إضافة المنتج');
     } finally {
       setSubmitting(false);
     }
@@ -166,9 +188,13 @@ export const ProductCatalogView: React.FC = () => {
 
     try {
       setSubmitting(true);
+      const token = sessionToken || localStorage.getItem('sahla_erp_auth_token_v1');
       const res = await fetch('/api/products/categories', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         credentials: 'include',
         body: JSON.stringify({
           code: catCode.trim() || undefined,
@@ -202,14 +228,19 @@ export const ProductCatalogView: React.FC = () => {
 
     try {
       setSubmitting(true);
+      const token = sessionToken || localStorage.getItem('sahla_erp_auth_token_v1');
       const res = await fetch(`/api/products/${editingProduct.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         credentials: 'include',
         body: JSON.stringify({
           nameAr: editingProduct.nameAr,
           nameEn: editingProduct.nameEn,
           categoryId: editingProduct.categoryId,
+          supplierId: editingProduct.supplierId || null,
           unit: editingProduct.unit,
           defaultCurrency: editingProduct.defaultCurrency,
           costPrice: parseFloat(editingProduct.costPrice) || 0,
@@ -241,15 +272,19 @@ export const ProductCatalogView: React.FC = () => {
       p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.nameAr.includes(searchTerm) ||
       (p.nameEn && p.nameEn.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (p.supplierName && p.supplierName.includes(searchTerm)) ||
       (p.description && p.description.includes(searchTerm));
 
     const matchesCategory =
       selectedCategory === 'all' || p.categoryId === selectedCategory;
 
+    const matchesSupplier =
+      selectedSupplierFilter === 'all' || p.supplierId === selectedSupplierFilter;
+
     const matchesStatus =
       statusFilter === 'all' || p.status === statusFilter;
 
-    return matchesSearch && matchesCategory && matchesStatus;
+    return matchesSearch && matchesCategory && matchesSupplier && matchesStatus;
   });
 
   return (
@@ -365,7 +400,7 @@ export const ProductCatalogView: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {/* Category Filter */}
           <select
             value={selectedCategory}
@@ -376,6 +411,20 @@ export const ProductCatalogView: React.FC = () => {
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nameAr}
+              </option>
+            ))}
+          </select>
+
+          {/* Supplier Filter */}
+          <select
+            value={selectedSupplierFilter}
+            onChange={(e) => setSelectedSupplierFilter(e.target.value)}
+            className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-700 cursor-pointer focus:outline-hidden focus:border-teal-500"
+          >
+            <option value="all">كافة الموردين ({suppliers.length})</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.supplierCode ? `[${s.supplierCode}] ` : ''}{s.name}
               </option>
             ))}
           </select>
@@ -416,6 +465,7 @@ export const ProductCatalogView: React.FC = () => {
                   <th className="py-3 px-4">كود المنتج (SKU)</th>
                   <th className="py-3 px-4">اسم المنتج والوصف</th>
                   <th className="py-3 px-4">التصنيف</th>
+                  <th className="py-3 px-4">المورد / المصنع</th>
                   <th className="py-3 px-4">الوحدة</th>
                   <th className="py-3 px-4">سعر التكلفة</th>
                   <th className="py-3 px-4">سعر البيع</th>
@@ -448,6 +498,16 @@ export const ProductCatalogView: React.FC = () => {
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-700">
                           {p.categoryNameAr || 'عام'}
                         </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        {p.supplierName ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-50 text-indigo-700">
+                            <Building className="w-3 h-3 shrink-0" />
+                            <span className="truncate max-w-[140px]" title={p.supplierName}>{p.supplierName}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">غير محدد</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-slate-600">
                         {p.unit === 'pcs' ? 'قطعة' : p.unit === 'carton' ? 'كرتونة' : p.unit === 'kg' ? 'كجم' : p.unit}
@@ -519,8 +579,15 @@ export const ProductCatalogView: React.FC = () => {
               </button>
             </div>
 
+            {modalError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleAddProduct} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-600 mb-1 font-medium">كود الصنف (SKU - اختياري)</label>
                   <input
@@ -546,6 +613,22 @@ export const ProductCatalogView: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-600 mb-1 font-medium">المورد / المصنع المعتمد</label>
+                <select
+                  value={supplierId}
+                  onChange={(e) => setSupplierId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:border-teal-500 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="">بدون مورد محدد</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.supplierCode ? `[${s.supplierCode}] ` : ''}{s.name} {s.country ? `(${s.country})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -793,7 +876,7 @@ export const ProductCatalogView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-slate-600 mb-1 font-medium">التصنيف</label>
                   <select
@@ -805,6 +888,21 @@ export const ProductCatalogView: React.FC = () => {
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.nameAr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-600 mb-1 font-medium">المورد / المصنع</label>
+                  <select
+                    value={editingProduct.supplierId || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, supplierId: e.target.value || undefined })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:border-teal-500 focus:outline-hidden cursor-pointer"
+                  >
+                    <option value="">بدون مورد محدد</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.supplierCode ? `[${s.supplierCode}] ` : ''}{s.name}
                       </option>
                     ))}
                   </select>

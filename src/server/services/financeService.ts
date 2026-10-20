@@ -1727,19 +1727,35 @@ export class FinanceService {
     const costPrice = Number(data.costPrice) || 0;
     const sellingPrice = Number(data.sellingPrice) || 0;
 
+    let resolvedCatId: string | null = null;
+    if (data.categoryId && data.categoryId.length === 36) {
+      resolvedCatId = data.categoryId;
+    } else if (data.categoryId) {
+      const [c] = await db.select().from(productCategories).where(eq(productCategories.code, data.categoryId));
+      if (c) resolvedCatId = c.id;
+    }
+
+    let resolvedSupId: string | null = null;
+    if (data.supplierId && data.supplierId.length === 36) {
+      resolvedSupId = data.supplierId;
+    } else if (data.supplierId) {
+      const [s] = await db.select().from(suppliers).where(eq(suppliers.supplierCode, data.supplierId));
+      if (s) resolvedSupId = s.id;
+    }
+
     const [product] = await db
       .insert(products)
       .values({
         sku,
         nameAr: data.nameAr,
         nameEn: data.nameEn || null,
-        categoryId: data.categoryId || null,
+        categoryId: resolvedCatId,
         description: data.description || null,
         unit: data.unit || 'pcs',
         defaultCurrency: (data.defaultCurrency || 'USD').toUpperCase(),
         costPrice: costPrice.toFixed(2),
         sellingPrice: sellingPrice.toFixed(2),
-        supplierId: data.supplierId || null,
+        supplierId: resolvedSupId,
         minOrderQty: Number(data.minOrderQty) || 1,
         status: 'active',
       })

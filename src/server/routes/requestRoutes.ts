@@ -7,7 +7,7 @@ import { RequestService } from '../services/requestService.ts';
 export const requestRouter = Router();
 
 const createRequestSchema = z.object({
-  customerId: z.string().uuid('معرف العميل غير صالح'),
+  customerId: z.string().min(1, 'معرف العميل مطلوب'),
   title: z.string().min(2, 'عنوان أو وصف الطلب مطلوب'),
   requestType: z.string().min(2, 'نوع الطلب مطلوب'),
   departmentId: z.string().uuid().optional(),

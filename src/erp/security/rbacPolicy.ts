@@ -1,6 +1,6 @@
 import { User, RoleCode, PermissionCode } from '../../types';
 
-export type CoreRoleKey = 'admin' | 'procurement' | 'finance' | 'customs' | 'sales';
+export type CoreRoleKey = 'admin' | 'procurement' | 'finance' | 'customs' | 'sales' | 'creative';
 
 export interface RoleConfig {
   key: CoreRoleKey;
@@ -161,6 +161,22 @@ export const RBAC_ROLES: Record<CoreRoleKey, RoleConfig> = {
     canManageUsers: false,
     permissions: ['requests:view', 'crm:view', 'crm:create', 'crm:edit', 'crm:convert', 'audit:view'],
   },
+
+  creative: {
+    key: 'creative',
+    code: 'creative_media' as RoleCode,
+    nameAr: 'مصمم جرافيك وسوشال ميديا ومحتوى',
+    nameEn: 'Creative & Social Media Specialist',
+    departmentNameAr: 'التسويق والمحتوى الرقمي',
+    descriptionAr: 'تصميم الهوية المرئية وإدارة منصات التواصل الاجتماعي. مستبعد تماماً من كافة الصلاحيات التشغيلية (المالية، المشتريات، الموردين، العملاء، الفواتير، والطلبات).',
+    allowedModules: [], // Strictly no operational modules
+    allowedRequestTabs: [],
+    canViewFinancials: false,
+    canViewCustoms: false,
+    canViewProcurement: false,
+    canManageUsers: false,
+    permissions: [], // Strictly zero operational permissions
+  },
 };
 
 /**
@@ -169,6 +185,9 @@ export const RBAC_ROLES: Record<CoreRoleKey, RoleConfig> = {
 export function getEffectiveRole(user: User): RoleConfig {
   if (user.roleCode === 'super_admin' || user.roleCode === 'admin' || user.departmentCode === 'MANAGEMENT') {
     return RBAC_ROLES.admin;
+  }
+  if (user.roleCode === 'creative_media' || user.departmentCode === 'MARKETING_CREATIVE' || user.username?.includes('design')) {
+    return RBAC_ROLES.creative;
   }
   if (user.roleCode === 'finance_accountant' || user.departmentCode === 'FINANCE') {
     return RBAC_ROLES.finance;
@@ -185,7 +204,7 @@ export function getEffectiveRole(user: User): RoleConfig {
   if (user.roleCode === 'sales_crm_officer' || user.departmentCode === 'SALES_CRM') {
     return RBAC_ROLES.sales;
   }
-  return RBAC_ROLES.admin;
+  return RBAC_ROLES.creative; // Secure default: zero operational privileges
 }
 
 /**
@@ -193,10 +212,24 @@ export function getEffectiveRole(user: User): RoleConfig {
  */
 export function isUserAllowedModule(user: User, moduleId: string): boolean {
   if (user.roleCode === 'super_admin' || user.roleCode === 'admin') return true;
+
+  // Creative / Designer / Social media is strictly excluded from ALL operational modules
+  if (user.roleCode === 'creative_media' || user.departmentCode === 'MARKETING_CREATIVE' || user.username?.includes('design')) {
+    return false;
+  }
+
   if (moduleId === 'tasks_management') return true;
 
+  // Procurement team and specialists always have access to product catalog and suppliers directory
+  if (
+    (moduleId === 'products_catalog' || moduleId === 'suppliers_master') &&
+    (user.departmentCode === 'PROCUREMENT' || user.roleCode?.includes('procurement'))
+  ) {
+    return true;
+  }
+
   // Custom allowed modules override set by Super Admin
-  if (user.allowedModules && user.allowedModules.length > 0) {
+  if (user.allowedModules) {
     return user.allowedModules.includes(moduleId);
   }
 

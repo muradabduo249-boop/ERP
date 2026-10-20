@@ -50,10 +50,12 @@ interface ErpAuthContextType {
   switchUserById: (userId: string) => void;
   isModuleAllowed: (moduleId: string) => boolean;
   hasPermission: (permission: PermissionCode) => boolean;
-  addUser: (user: User) => User;
-  updateUser: (userId: string, updates: Partial<User>) => User;
-  deleteUser: (userId: string) => boolean;
-  refreshData: () => void;
+  addUser: (user: User, pinOrPassword?: string) => Promise<User>;
+  updateUser: (userId: string, updates: Partial<User>) => Promise<User>;
+  deleteUser: (userId: string) => Promise<boolean>;
+  updateProfile: (data: { name?: string; phone?: string; email?: string }) => Promise<void>;
+  changePassword: (currentSecret: string, newSecret: string) => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
 const ErpAuthContext = createContext<ErpAuthContextType | undefined>(undefined);
@@ -127,6 +129,10 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setCurrentUser(mappedUser);
             setIsAuthenticated(true);
             setSessionToken(token);
+            // Immediately fetch live PostgreSQL departments, roles, and users
+            setTimeout(() => {
+              refreshData();
+            }, 50);
           } else {
             // Session expired or invalid on server
             setIsAuthenticated(false);
@@ -155,10 +161,11 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     if (token) {
       try {
-        const [meRes, deptsRes, rolesRes] = await Promise.all([
+        const [meRes, deptsRes, rolesRes, usersRes] = await Promise.all([
           fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } }),
           fetch('/api/departments', { headers: { Authorization: `Bearer ${token}` } }),
           fetch('/api/roles', { headers: { Authorization: `Bearer ${token}` } }),
+          fetch('/api/users', { headers: { Authorization: `Bearer ${token}` } }),
         ]);
 
         if (meRes.ok) {
@@ -186,7 +193,33 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setRoles(rData.data);
           }
         }
-      } catch {}
+        if (usersRes.ok) {
+          const uData = await usersRes.json();
+          if (uData.success && Array.isArray(uData.data)) {
+            const mappedUsers: User[] = uData.data.map((u: any) => ({
+              id: u.id,
+              username: u.username,
+              email: u.email,
+              name: u.name,
+              phone: u.phone || '',
+              departmentId: u.departmentId || 'dept-mgmt-001',
+              departmentCode: u.departmentCode || 'MANAGEMENT',
+              departmentNameAr: u.departmentNameAr || 'الإدارة العامة',
+              roleId: u.roleId || 'role-viewer',
+              roleCode: u.roleCode || 'viewer',
+              roleNameAr: u.roleNameAr || 'مستعرض',
+              status: u.status || 'active',
+              allowedModules: u.allowedModules || ['dashboard', 'requests_backbone'],
+              createdAt: u.createdAt || new Date().toISOString(),
+            }));
+            setUsers(mappedUsers);
+            erpEngine.syncUsersFromBackend(mappedUsers);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('refreshData error:', err);
+      }
     }
 
     const updatedUsers = erpEngine.getUsers();
@@ -229,6 +262,11 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
           localStorage.setItem(AUTH_STORAGE_KEY, mappedUser.id);
         } catch {}
 
+        // Fetch live database metadata immediately
+        setTimeout(() => {
+          refreshData();
+        }, 50);
+
         return { success: true };
       } else {
         return { success: false, error: data.error?.message || 'اسم المستخدم أو رمز PIN غير صحيح' };
@@ -260,7 +298,6 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const switchUserById = () => {
-    // Unconditionally require logging out to switch user with valid credentials
     logout();
   };
 
@@ -274,25 +311,138 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return erpEngine.checkPermission(currentUser, permission);
   };
 
-  const addUser = (newUser: User): User => {
+  const addUser = async (newUser: User, pinOrPassword?: string): Promise<User> => {
     if (!currentUser) throw new Error('Not authenticated');
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (token) {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          username: newUser.username,
+          email: newUser.email,
+          password: pinOrPassword || newUser.pin || '1234',
+          name: newUser.name,
+          phone: newUser.phone,
+          departmentId: newUser.departmentId,
+          departmentCode: newUser.departmentCode,
+          roleId: newUser.roleId,
+          roleCode: newUser.roleCode,
+          allowedModules: newUser.allowedModules,
+          status: newUser.status,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error?.message || 'فشل حفظ الموظف في قاعدة البيانات');
+      }
+      if (data.data?.id) {
+        newUser.id = data.data.id;
+      }
+    }
     const added = erpEngine.addUser(newUser, currentUser);
-    refreshData();
+    await refreshData();
     return added;
   };
 
-  const updateUser = (userId: string, updates: Partial<User>): User => {
+  const updateUser = async (userId: string, updates: Partial<User>): Promise<User> => {
     if (!currentUser) throw new Error('Not authenticated');
-    const updated = erpEngine.updateUser(userId, updates, currentUser);
-    refreshData();
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (token) {
+      const payload: Record<string, any> = {
+        name: updates.name,
+        email: updates.email,
+        phone: updates.phone,
+        departmentId: updates.departmentId,
+        departmentCode: updates.departmentCode,
+        roleId: updates.roleId,
+        roleCode: updates.roleCode,
+        status: updates.status,
+        allowedModules: updates.allowedModules,
+      };
+      if (updates.username) {
+        payload.username = updates.username;
+      }
+      if (updates.pin && updates.pin.trim().length >= 3) {
+        payload.password = updates.pin.trim();
+      }
+
+      const res = await fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error?.message || 'فشل تحديث بيانات الموظف في قاعدة البيانات');
+      }
+    }
+    const engineUpdates = { ...updates };
+    if (!engineUpdates.pin || engineUpdates.pin.trim().length === 0) {
+      delete engineUpdates.pin;
+    }
+    const updated = erpEngine.updateUser(userId, engineUpdates, currentUser);
+    await refreshData();
     return updated;
   };
 
-  const deleteUser = (userId: string): boolean => {
+  const deleteUser = async (userId: string): Promise<boolean> => {
     if (!currentUser) throw new Error('Not authenticated');
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (token) {
+      const res = await fetch(`/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error?.message || 'فشل حذف الموظف من قاعدة البيانات');
+      }
+    }
     const deleted = erpEngine.deleteUser(userId, currentUser);
-    refreshData();
+    await refreshData();
     return deleted;
+  };
+
+  const updateProfile = async (data: { name?: string; phone?: string; email?: string }): Promise<void> => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) throw new Error('غير مسجل دخول');
+    const res = await fetch('/api/auth/profile', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    const resData = await res.json();
+    if (!resData.success) {
+      throw new Error(resData.error?.message || 'فشل تحديث الملف الشخصي');
+    }
+    await refreshData();
+  };
+
+  const changePassword = async (currentSecret: string, newSecret: string): Promise<void> => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) throw new Error('غير مسجل دخول');
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ currentPassword: currentSecret, newPassword: newSecret }),
+    });
+    const resData = await res.json();
+    if (!resData.success) {
+      throw new Error(resData.error?.message || 'فشل تغيير كلمة المرور');
+    }
   };
 
   const effectiveRole = getEffectiveRole(currentUser);
@@ -328,6 +478,8 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addUser,
         updateUser,
         deleteUser,
+        updateProfile,
+        changePassword,
         refreshData,
       }}
     >

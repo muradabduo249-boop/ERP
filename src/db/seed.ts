@@ -25,6 +25,8 @@ export async function seedDatabase() {
     { code: 'FINANCE', nameAr: 'المالية والخزينة والمطابقات', nameEn: 'Finance & Treasury', descriptionAr: 'سندات القبض والصرف، مطابقة تطبيق بنكك، وإدارة الخزائن المتعددة' },
     { code: 'OPERATIONS', nameAr: 'العمليات اللوجستية والشحن', nameEn: 'Logistics & Ocean Freight', descriptionAr: 'متابعة بوالص الشحن، الحاويات، والتنسيق الميداني الملاحي' },
     { code: 'CUSTOMS', nameAr: 'التخليص الجمركي - ميناء بورتسودان', nameEn: 'Port Sudan Customs Clearance', descriptionAr: 'شهادات الإجراء الجمركي (Asycuda)، بنود التعريفة، وسداد الرسوم' },
+    { code: 'SALES_CRM', nameAr: 'المبيعات وخدمة العملاء (CRM)', nameEn: 'Sales & Customer Service', descriptionAr: 'استقبال استفسارات العملاء، إدارة سجلات العملاء، دراسة الاحتياجات وتأهيل الفرص التجارية' },
+    { code: 'MARKETING_CREATIVE', nameAr: 'التسويق والمحتوى الرقمي', nameEn: 'Marketing & Creative Media', descriptionAr: 'إدارة الهوية والتصميم والمحتوى الخارجي - قسم غير تشغيلي بالمنظومة' },
     { code: 'IT_ADMIN', nameAr: 'نظم المعلومات والحوكمة التقنية', nameEn: 'IT Systems & Governance', descriptionAr: 'إدارة المستخدمين والصلاحيات والنسخ الاحتياطي وأمن البيانات' },
   ];
 
@@ -103,6 +105,7 @@ export async function seedDatabase() {
     { code: 'finance_accountant', nameAr: 'رئيس قسم المالية والخزينة', nameEn: 'Finance & Treasury Lead', descriptionAr: 'إدارة الفواتير والتحصيل وسندات القبض ومطابقات بنكك', isSystem: false },
     { code: 'operations_officer', nameAr: 'ضابط عمليات وشحن وتخليص', nameEn: 'Operations & Logistics Officer', descriptionAr: 'متابعة الشحن والتخليص الجمركي ببورتسودان وتفويج الشاحنات', isSystem: false },
     { code: 'sales_crm_officer', nameAr: 'مسؤول مبيعات وخدمة عملاء (CRM)', nameEn: 'Sales & CRM Specialist', descriptionAr: 'استقبال طلبات العملاء وتأهيل الفرص التجارية', isSystem: false },
+    { code: 'creative_media', nameAr: 'مصمم جرافيك وسوشال ميديا ومحتوى', nameEn: 'Creative & Social Media Specialist', descriptionAr: 'تصميم الهوية المرئية وإدارة منصات التواصل الاجتماعي. مستبعد كلياً من الصلاحيات التشغيلية (المالية، المشتريات، الموردين، العملاء، الفواتير، والطلبات)', isSystem: false },
     { code: 'viewer', nameAr: 'مستعرض تدقيق ومراقبة (Read-Only)', nameEn: 'Auditor & Read-Only Viewer', descriptionAr: 'صلاحية استعراض ومطالعة دون إمكانية التعديل', isSystem: true },
   ];
 
@@ -166,7 +169,8 @@ export async function seedDatabase() {
       'suppliers:view',
       'products:view'
     ],
-    viewer: ['requests:view', 'crm:view', 'customers:view', 'suppliers:view', 'operations:view', 'audit:view', 'finance:view', 'products:view']
+    viewer: ['requests:view', 'crm:view', 'customers:view', 'suppliers:view', 'operations:view', 'audit:view', 'finance:view', 'products:view'],
+    creative_media: [] // Strictly ZERO operational permissions (excluded from ERP operations)
   };
 
   for (const [roleCode, permCodes] of Object.entries(rolePermMapping)) {
@@ -220,21 +224,92 @@ export async function seedDatabase() {
       username: 'admin',
       email: 'ceo@sahla.sd',
       passwordHash,
-      name: 'أحمد النور البشير',
+      name: 'عبد الهادي',
       phone: '+249912000001',
       departmentCode: 'MANAGEMENT',
       roleCode: 'super_admin',
-      allowedModules: ['dashboard', 'requests_backbone', 'customers_master', 'suppliers_master', 'crm_leads', 'procurement', 'finance', 'operations', 'audit_trail', 'rbac_matrix', 'products_catalog'],
+      allowedModules: ['dashboard', 'requests_backbone', 'tasks_management', 'customers_master', 'suppliers_master', 'crm_leads', 'procurement', 'finance', 'operations', 'audit_trail', 'rbac_matrix', 'products_catalog'],
     },
+    {
+      username: 'omar',
+      email: 'omar.china@sahla.sd',
+      passwordHash,
+      name: 'عمر',
+      phone: '+8613800000001',
+      departmentCode: 'OPERATIONS',
+      roleCode: 'department_manager',
+      allowedModules: ['dashboard', 'procurement', 'suppliers_master', 'products_catalog', 'requests_backbone', 'tasks_management', 'operations'],
+    },
+    {
+      username: 'miqdad',
+      email: 'miqdad.field@sahla.sd',
+      passwordHash,
+      name: 'مقداد',
+      phone: '+249912000008',
+      departmentCode: 'OPERATIONS',
+      roleCode: 'operations_officer',
+      allowedModules: ['dashboard', 'operations', 'requests_backbone', 'tasks_management'],
+    },
+    {
+      username: 'ahmed',
+      email: 'ahmed.ops@sahla.sd',
+      passwordHash,
+      name: 'أحمد',
+      phone: '+249912000004',
+      departmentCode: 'OPERATIONS',
+      roleCode: 'operations_officer',
+      allowedModules: ['dashboard', 'operations', 'requests_backbone', 'tasks_management', 'products_catalog'],
+    },
+    {
+      username: 'hisham',
+      email: 'hisham.delivery@sahla.sd',
+      passwordHash,
+      name: 'هشام',
+      phone: '+249912000009',
+      departmentCode: 'OPERATIONS',
+      roleCode: 'operations_officer',
+      allowedModules: ['dashboard', 'operations', 'requests_backbone', 'tasks_management'],
+    },
+    {
+      username: 'raji',
+      email: 'raji.sales@sahla.sd',
+      passwordHash,
+      name: 'راجي',
+      phone: '+249912000006',
+      departmentCode: 'SALES_CRM',
+      roleCode: 'sales_crm_officer',
+      allowedModules: ['dashboard', 'customers_master', 'crm_leads', 'requests_backbone', 'tasks_management', 'products_catalog'],
+    },
+    {
+      username: 'tayseer',
+      email: 'tayseer.cx@sahla.sd',
+      passwordHash,
+      name: 'تيسير',
+      phone: '+249912000010',
+      departmentCode: 'SALES_CRM',
+      roleCode: 'sales_crm_officer',
+      allowedModules: ['dashboard', 'customers_master', 'crm_leads', 'requests_backbone', 'tasks_management'],
+    },
+    {
+      username: 'tasabeeh',
+      email: 'tasabeeh.procurement@sahla.sd',
+      passwordHash,
+      name: 'تسابيح',
+      phone: '+249912000002',
+      departmentCode: 'PROCUREMENT',
+      roleCode: 'procurement_specialist',
+      allowedModules: ['dashboard', 'procurement', 'suppliers_master', 'products_catalog', 'requests_backbone', 'tasks_management'],
+    },
+    // Supporting departmental operational roles for verification and continuity
     {
       username: 'procurement',
       email: 'procurement.lead@sahla.sd',
       passwordHash,
-      name: 'م. طارق عبد الرحمن',
+      name: 'تسابيح (المشتريات والتوريد)',
       phone: '+249912000002',
       departmentCode: 'PROCUREMENT',
       roleCode: 'procurement_specialist',
-      allowedModules: ['dashboard', 'procurement', 'suppliers_master', 'requests_backbone', 'products_catalog'],
+      allowedModules: ['dashboard', 'procurement', 'suppliers_master', 'requests_backbone', 'tasks_management', 'products_catalog'],
     },
     {
       username: 'finance',
@@ -244,17 +319,17 @@ export async function seedDatabase() {
       phone: '+249912000003',
       departmentCode: 'FINANCE',
       roleCode: 'finance_accountant',
-      allowedModules: ['dashboard', 'finance', 'requests_backbone', 'products_catalog'],
+      allowedModules: ['dashboard', 'finance', 'requests_backbone', 'tasks_management', 'products_catalog'],
     },
     {
       username: 'operations',
       email: 'operations.lead@sahla.sd',
       passwordHash,
-      name: 'كابتن محمد صلاح',
+      name: 'أحمد (منسق العمليات)',
       phone: '+249912000004',
       departmentCode: 'OPERATIONS',
       roleCode: 'operations_officer',
-      allowedModules: ['dashboard', 'operations', 'requests_backbone', 'products_catalog'],
+      allowedModules: ['dashboard', 'operations', 'requests_backbone', 'tasks_management', 'products_catalog'],
     },
     {
       username: 'customs',
@@ -264,7 +339,28 @@ export async function seedDatabase() {
       phone: '+249912000005',
       departmentCode: 'CUSTOMS',
       roleCode: 'operations_officer',
-      allowedModules: ['dashboard', 'operations', 'requests_backbone'],
+      allowedModules: ['dashboard', 'operations', 'requests_backbone', 'tasks_management'],
+    },
+    {
+      username: 'sales',
+      email: 'sales.lead@sahla.sd',
+      passwordHash,
+      name: 'راجي (أخصائي المبيعات)',
+      phone: '+249912000006',
+      departmentCode: 'SALES_CRM',
+      roleCode: 'sales_crm_officer',
+      allowedModules: ['dashboard', 'customers_master', 'crm_leads', 'requests_backbone', 'tasks_management', 'products_catalog'],
+    },
+    {
+      username: 'designer',
+      email: 'designer.creative@sahla.sd',
+      passwordHash,
+      name: 'مصمم جرافيك (مستبعد من النظام)',
+      phone: '+249912000007',
+      departmentCode: 'MARKETING_CREATIVE',
+      roleCode: 'creative_media',
+      allowedModules: [], // Strictly excluded from all ERP modules
+      status: 'inactive' as const,
     },
   ];
 
@@ -279,9 +375,21 @@ export async function seedDatabase() {
         phone: u.phone,
         departmentId: deptMap[u.departmentCode] || null,
         roleId: roleMap[u.roleCode] || null,
-        status: 'active',
+        status: (u as any).status || 'active',
         allowedModules: u.allowedModules,
       });
+    } else {
+      // Update password hash, allowed modules and names to keep canonical PDF alignment
+      await db.update(users).set({
+        email: u.email,
+        passwordHash: u.passwordHash,
+        name: u.name,
+        phone: u.phone,
+        departmentId: deptMap[u.departmentCode] || existing[0].departmentId,
+        roleId: roleMap[u.roleCode] || existing[0].roleId,
+        status: (u as any).status || existing[0].status,
+        allowedModules: u.allowedModules,
+      }).where(eq(users.id, existing[0].id));
     }
   }
 

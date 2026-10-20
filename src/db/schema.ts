@@ -835,6 +835,31 @@ export const products = pgTable('products', {
 ]);
 
 // =========================================================================
+// 27b. SUPPLIER PRODUCTS TABLE (Many-to-Many: 1 Supplier -> 100s of Items, 1 Item -> Multiple Suppliers)
+// =========================================================================
+export const supplierProducts = pgTable('supplier_products', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  supplierId: uuid('supplier_id').references(() => suppliers.id, { onDelete: 'cascade' }).notNull(),
+  productId: uuid('product_id').references(() => products.id, { onDelete: 'cascade' }).notNull(),
+  supplierItemCode: varchar('supplier_item_code', { length: 100 }), // كود الصنف لدى المورد
+  purchasePrice: numeric('purchase_price', { precision: 15, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 10 }).notNull().default('USD'),
+  moq: integer('moq').default(1).notNull(),
+  leadTimeDays: integer('lead_time_days'),
+  quotationRef: text('quotation_ref'),
+  notes: text('notes'),
+  isPrimary: boolean('is_primary').default(false).notNull(),
+  priceUpdatedAt: timestamp('price_updated_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('supplier_products_uniq_idx').on(table.supplierId, table.productId),
+  index('supplier_products_supp_idx').on(table.supplierId),
+  index('supplier_products_prod_idx').on(table.productId),
+  index('supplier_products_item_code_idx').on(table.supplierItemCode),
+]);
+
+// =========================================================================
 // 28. SUPPLIER INVOICES TABLE (Official Vendor Bills & Overpayment Guard)
 // =========================================================================
 export const supplierInvoices = pgTable('supplier_invoices', {
@@ -900,13 +925,17 @@ export const customerInvoices = pgTable('customer_invoices', {
 export const customerInvoiceItems = pgTable('customer_invoice_items', {
   id: uuid('id').defaultRandom().primaryKey(),
   invoiceId: uuid('invoice_id').references(() => customerInvoices.id, { onDelete: 'cascade' }).notNull(),
-  description: text('description').notNull(),
   productId: uuid('product_id').references(() => products.id, { onDelete: 'set null' }),
+  itemCode: varchar('item_code', { length: 50 }), // Historical Item Code snapshot
+  description: text('description').notNull(),
+  unit: varchar('unit', { length: 30 }).default('pcs'),
   quantity: numeric('quantity', { precision: 12, scale: 2 }).notNull().default('1.00'),
   unitPrice: numeric('unit_price', { precision: 15, scale: 2 }).notNull(),
   totalPrice: numeric('total_price', { precision: 15, scale: 2 }).notNull(),
 }, (table) => [
   index('customer_inv_items_inv_idx').on(table.invoiceId),
+  index('customer_inv_items_prod_idx').on(table.productId),
+  index('customer_inv_items_code_idx').on(table.itemCode),
 ]);
 
 // =========================================================================
@@ -1139,6 +1168,17 @@ export const receiptVouchersRelations = relations(receiptVouchers, ({ one }) => 
   poster: one(users, {
     fields: [receiptVouchers.postedBy],
     references: [users.id],
+  }),
+}));
+
+export const supplierProductsRelations = relations(supplierProducts, ({ one }) => ({
+  supplier: one(suppliers, {
+    fields: [supplierProducts.supplierId],
+    references: [suppliers.id],
+  }),
+  product: one(products, {
+    fields: [supplierProducts.productId],
+    references: [products.id],
   }),
 }));
 

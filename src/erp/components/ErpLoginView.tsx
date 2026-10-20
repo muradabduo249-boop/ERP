@@ -44,10 +44,14 @@ export const ErpLoginView: React.FC<ErpLoginViewProps> = ({ onLoginSuccess }) =>
   };
 
   const quickAccounts = [
-    { label: 'المدير العام', id: 'admin' },
-    { label: 'الجمارك', id: 'customs' },
-    { label: 'المالية', id: 'finance' },
-    { label: 'المشتريات', id: 'procurement' },
+    { label: 'عبد الهادي (المدير العام)', id: 'admin' },
+    { label: 'عمر (مكتب الصين والتوريد)', id: 'omar' },
+    { label: 'مقداد (التنسيق الميداني)', id: 'miqdad' },
+    { label: 'أحمد (العمليات والمتابعة)', id: 'ahmed' },
+    { label: 'هشام (التوزيع والتوصيل)', id: 'hisham' },
+    { label: 'راجي (المبيعات وCRM)', id: 'raji' },
+    { label: 'تيسير (خدمة العملاء والدعم)', id: 'tayseer' },
+    { label: 'تسابيح (المشتريات والتوريد)', id: 'tasabeeh' },
   ];
 
   const handleQuickSelect = async (accId: string) => {

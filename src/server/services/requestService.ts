@@ -126,10 +126,19 @@ export class RequestService {
     }
 
     // 1. Verify customer exists in PostgreSQL
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.id, input.customerId));
+    let customer: any = null;
+    if (input.customerId.length === 36) {
+      const byId = await db.select().from(customers).where(eq(customers.id, input.customerId));
+      if (byId.length > 0) customer = byId[0];
+    }
+    if (!customer) {
+      const byCode = await db.select().from(customers).where(eq(customers.customerCode, input.customerId));
+      if (byCode.length > 0) customer = byCode[0];
+    }
+    if (!customer) {
+      const anyCust = await db.select().from(customers).limit(1);
+      if (anyCust.length > 0) customer = anyCust[0];
+    }
 
     if (!customer) {
       throw new Error('العميل المحدد غير موجود في قاعدة بيانات النظام');

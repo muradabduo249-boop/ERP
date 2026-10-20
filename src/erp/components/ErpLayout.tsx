@@ -64,9 +64,9 @@ export const ErpLayout: React.FC = () => {
       />
 
       {/* Main Workspace Body */}
-      <div className="flex-1 flex flex-col lg:flex-row">
-        {/* Desktop Sticky Sidebar (Strictly Filtered) */}
-        <div className="hidden lg:block">
+      <div className="flex-1 flex flex-col lg:flex-row items-stretch min-h-[calc(100vh-4rem)]">
+        {/* Desktop Sticky Sidebar (Strictly Filtered, Full Height, Persistent) */}
+        <aside className="hidden lg:block lg:sticky lg:top-14 sm:lg:top-16 lg:h-[calc(100vh-3.5rem)] sm:lg:h-[calc(100vh-4rem)] lg:self-start lg:overflow-y-auto shrink-0 z-30 w-64 bg-white border-l border-[#E2E8F0] shadow-xs">
           <ErpSidebar
             activeTab={activeTab}
             onSelectTab={setActiveTab}
@@ -78,7 +78,7 @@ export const ErpLayout: React.FC = () => {
             receiptsCount={receipts.length}
             auditLogsCount={auditLogs.length}
           />
-        </div>
+        </aside>
 
         {/* Mobile Slide-Over Drawer */}
         {isMobileDrawerOpen && (
@@ -107,7 +107,7 @@ export const ErpLayout: React.FC = () => {
         )}
 
         {/* Main Content Workspace (RBAC Protected) */}
-        <main className="flex-1 p-3 sm:p-4.5 lg:p-5 max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-3 sm:p-4.5 lg:p-5 max-w-7xl mx-auto w-full min-w-0">
           {!isModuleAllowed(activeTab) ? (
             <div className="bg-white rounded-3xl p-12 text-center border border-[#E2E8F0] shadow-xs space-y-3">
               <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto" />

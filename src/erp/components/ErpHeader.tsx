@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Logo } from '../../components/Logo';
 import { useErpAuth } from '../context/ErpAuthContext';
 import { ErpNotificationBell } from './ErpNotificationBell';
+import { UserProfileModal } from './UserProfileModal';
 import {
   UserCheck,
   Menu,
@@ -16,6 +17,7 @@ export const ErpHeader: React.FC<ErpHeaderProps> = ({
   onToggleMobileDrawer,
 }) => {
   const { currentUser, logout } = useErpAuth();
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   return (
     <header className="bg-white text-[#172033] border-b border-[#E2E8F0] sticky top-0 z-40 shadow-xs">
@@ -50,7 +52,12 @@ export const ErpHeader: React.FC<ErpHeaderProps> = ({
                 {/* Real-time In-App Notifications Feed */}
                 <ErpNotificationBell />
 
-                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-[#E2E8F0] text-xs text-right">
+                {/* Profile Badge Button */}
+                <button
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-blue-50 border border-[#E2E8F0] hover:border-blue-300 text-xs text-right cursor-pointer transition-all"
+                  title="فتح إعدادات الملف الشخصي وكلمة المرور"
+                >
                   <div className="w-6 h-6 rounded-lg bg-[#2563EB] text-white font-black flex items-center justify-center text-[11px] shrink-0 shadow-xs">
                     {currentUser.name.slice(0, 1)}
                   </div>
@@ -64,7 +71,7 @@ export const ErpHeader: React.FC<ErpHeaderProps> = ({
                     <div className="text-[9px] text-[#64748B] font-medium">{currentUser.departmentNameAr}</div>
                   </div>
                   <UserCheck className="w-3.5 h-3.5 text-[#2563EB] mr-0.5 shrink-0 hidden sm:block" />
-                </div>
+                </button>
 
                 <button
                   onClick={logout}
@@ -74,6 +81,12 @@ export const ErpHeader: React.FC<ErpHeaderProps> = ({
                   <LogOut className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">تسجيل خروج</span>
                 </button>
+
+                {/* Personal Profile & Password Settings Modal */}
+                <UserProfileModal
+                  isOpen={isProfileModalOpen}
+                  onClose={() => setIsProfileModalOpen(false)}
+                />
               </>
             )}
           </div>

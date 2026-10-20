@@ -175,7 +175,7 @@ export const ErpSidebar: React.FC<ErpSidebarProps> = ({
   };
 
   return (
-    <aside className="w-full lg:w-60 bg-white border-l border-[#E2E8F0] flex flex-col justify-between shrink-0 p-3 text-right">
+    <aside className="w-full bg-white flex flex-col justify-between shrink-0 p-3 text-right min-h-full">
       <div className="space-y-3.5">
         {/* Mobile Header with Close Button */}
         {onCloseMobileDrawer && (

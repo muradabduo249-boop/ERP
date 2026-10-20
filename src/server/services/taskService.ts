@@ -182,6 +182,7 @@ export class TaskService {
     taskId: string,
     status: 'pending' | 'in_progress' | 'completed' | 'cancelled',
     actor: TaskActor,
+    notes?: string,
     ipAddress?: string,
     userAgent?: string
   ) {
@@ -194,14 +195,28 @@ export class TaskService {
       throw new Error('المهمة غير موجودة');
     }
 
+    // Strict ownership enforcement: Only the assigned employee or management/admin can change status
+    const isOwner = current.assignedUserId === actor.id;
+    const isSuperAdmin = actor.role === 'super_admin' || actor.role === 'admin';
+    if (!isOwner && !isSuperAdmin) {
+      throw new Error('غير مصرح لك بتغيير حالة مهمة مسندة لموظف آخر. يمكنك فقط إدارة مهامك الخاصة.');
+    }
+
     const now = new Date();
     const completedAtVal = status === 'completed' ? now : null;
+
+    const formattedHandoverNote = notes?.trim()
+      ? current.notes
+        ? `${current.notes}\n[${now.toLocaleDateString('ar-SD')} - ${actor.name}]: ${notes.trim()}`
+        : `[${now.toLocaleDateString('ar-SD')} - ${actor.name}]: ${notes.trim()}`
+      : current.notes;
 
     const updated = await db.transaction(async (tx) => {
       const [u] = await tx
         .update(requestAssignments)
         .set({
           status,
+          notes: formattedHandoverNote,
           completedAt: completedAtVal,
           updatedAt: now,
         })

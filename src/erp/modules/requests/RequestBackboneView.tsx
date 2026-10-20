@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { erpEngine } from '../../engine/erpEngine';
 import { useErpAuth } from '../../context/ErpAuthContext';
+import { SearchableSelector, SearchOption } from '../../components/SearchableSelector';
 import {
   GitBranch,
   Plus,
@@ -103,6 +104,17 @@ export const RequestBackboneView: React.FC = () => {
   const [reqType, setReqType] = useState('PURCHASE_AND_SHIP');
   const [reqPriority, setReqPriority] = useState<RequestPriority>('normal');
   const [reqNotes, setReqNotes] = useState('');
+
+  const customerOptions: SearchOption[] = useMemo(() => {
+    return customers.map((c: any) => ({
+      id: c.id,
+      title: c.companyName || c.tradeName || c.contactName || 'عميل',
+      code: c.customerCode || '',
+      subtitle: `${c.primaryPhone || c.phone || ''} | ${c.city || ''} (${c.country || 'السودان'})`,
+      badge: c.customerCode || 'عميل',
+      meta: c,
+    }));
+  }, [customers]);
 
   // Initialize selectedCustomerId when customers load
   useEffect(() => {
@@ -493,7 +505,7 @@ export const RequestBackboneView: React.FC = () => {
           <div className="flex items-center gap-2 mb-1">
             <GitBranch className="w-5 h-5 text-[#D99B00]" />
             <h2 className="text-xl font-bold text-slate-900">
-              الطلبات المركزية - العمود الفقري للنظام (Request Backbone)
+              سجل الطلبات التشغيلية المركزية
             </h2>
           </div>
           <p className="text-xs text-slate-500">
@@ -1322,32 +1334,30 @@ export const RequestBackboneView: React.FC = () => {
 
             <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">اختيار العميل *</label>
-                <select
+                <SearchableSelector
+                  label="اختيار العميل (بحث بالاسم أو الكود أو الهاتف)"
+                  required
+                  options={customerOptions}
                   value={selectedCustomerId}
-                  onChange={(e) => setSelectedCustomerId(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold bg-white"
-                >
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.companyName} ({c.customerCode}) - {c.primaryPhone}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedCustomerId(val)}
+                  placeholder="ابحث باسم العميل التجاري أو الكود (SH-C-XXXX) أو رقم الهاتف..."
+                />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">نوع طلب الخدمة *</label>
+                <label className="block font-bold text-slate-700 mb-1">نوع الخدمة والمسار التشغيلي *</label>
                 <select
                   value={reqType}
                   onChange={(e) => setReqType(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white font-medium focus:border-blue-500 focus:outline-hidden cursor-pointer"
                 >
-                  <option value="PURCHASE_AND_SHIP">شراء وتوريد وشحن متكامل (Procurement)</option>
-                  <option value="SHIPPING_LCL">شحن بحري مجدول LCL (Operations)</option>
-                  <option value="SHIPPING_FCL">شحن حاويات كاملة FCL (Operations)</option>
-                  <option value="CUSTOMS_CLEARANCE">تخليص جمركي ومواصفات بورتسودان (Customs)</option>
-                  <option value="INSPECTION_ONLY">فحص جودة بالمصنع في الصين (Procurement)</option>
+                  <option value="PURCHASE_AND_SHIP">شراء وتوريد وشحن متكامل من المصانع (Procurement & Shipping)</option>
+                  <option value="SHIPPING_LCL">شحن بحري مجدول جزئي LCL (تجميع طرود ومستودعات)</option>
+                  <option value="SHIPPING_FCL">شحن بحري حاويات كاملة FCL (خطوط ملاحية)</option>
+                  <option value="AIR_FREIGHT">شحن جوي سريع (Air Cargo)</option>
+                  <option value="CUSTOMS_CLEARANCE">تخليص جمركي ومواصفات بميناء بورتسودان (Customs Clearance)</option>
+                  <option value="INSPECTION_ONLY">فحص جودة ومعاينة المصنع والتحقق من المورد (Inspection)</option>
+                  <option value="LOCAL_DELIVERY">توصيل وتوزيع داخلي وتسليم POD (Local Delivery)</option>
                 </select>
               </div>
 

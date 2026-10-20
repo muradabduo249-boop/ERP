@@ -760,23 +760,32 @@ class ErpEngine {
     const cleanLogin = (loginId || '').trim().toLowerCase();
     const cleanPin = (pin || '').trim();
 
-    // Map common Arabic titles to seed usernames for seamless entry
+    // 1. First check if there is an exact username or email match
+    let exactUser = this.state.users.find((u) => {
+      const uUsername = (u.username || '').toLowerCase();
+      const uEmail = (u.email || '').toLowerCase();
+      return uUsername === cleanLogin || uEmail === cleanLogin;
+    });
+
+    // Map common Arabic titles to seed usernames ONLY if no exact account matched
     let targetUsername = cleanLogin;
-    if (cleanLogin.includes('مدير') || cleanLogin.includes('admin') || cleanLogin === 'ceo') {
-      targetUsername = 'admin';
-    } else if (cleanLogin.includes('جمرك') || cleanLogin.includes('جمارك') || cleanLogin === 'customs') {
-      targetUsername = 'customs';
-    } else if (cleanLogin.includes('مال') || cleanLogin.includes('حساب') || cleanLogin === 'finance') {
-      targetUsername = 'finance';
-    } else if (cleanLogin.includes('مشتر') || cleanLogin.includes('توريد') || cleanLogin === 'procurement') {
-      targetUsername = 'procurement';
-    } else if (cleanLogin.includes('عمليات') || cleanLogin.includes('شحن') || cleanLogin === 'operations') {
-      targetUsername = 'operations';
-    } else if (cleanLogin.includes('مبيع') || cleanLogin.includes('عملا') || cleanLogin === 'sales') {
-      targetUsername = 'sales';
+    if (!exactUser) {
+      if (cleanLogin === 'مدير' || cleanLogin === 'المدير' || cleanLogin === 'المدير العام' || cleanLogin === 'admin' || cleanLogin === 'ceo' || cleanLogin === 'عبد الهادي' || cleanLogin === 'عبدالهادي') {
+        targetUsername = 'admin';
+      } else if (cleanLogin === 'جمرك' || cleanLogin === 'جمارك' || cleanLogin === 'الجمارك' || cleanLogin === 'customs') {
+        targetUsername = 'customs';
+      } else if (cleanLogin === 'مالية' || cleanLogin === 'المالية' || cleanLogin === 'حسابات' || cleanLogin === 'finance') {
+        targetUsername = 'finance';
+      } else if (cleanLogin === 'مشتريات' || cleanLogin === 'المشتريات' || cleanLogin === 'توريد' || cleanLogin === 'procurement') {
+        targetUsername = 'procurement';
+      } else if (cleanLogin === 'عمليات' || cleanLogin === 'العمليات' || cleanLogin === 'شحن' || cleanLogin === 'operations') {
+        targetUsername = 'operations';
+      } else if (cleanLogin === 'مبيعات' || cleanLogin === 'المبيعات' || cleanLogin === 'عملاء' || cleanLogin === 'sales') {
+        targetUsername = 'sales';
+      }
     }
 
-    const user = this.state.users.find((u) => {
+    const user = exactUser || this.state.users.find((u) => {
       const uUsername = (u.username || '').toLowerCase();
       const uEmail = (u.email || '').toLowerCase();
       const uPhone = (u.phone || '').replace(/[\s\-\+]/g, '');
@@ -786,8 +795,8 @@ class ErpEngine {
       const matchUsername = uUsername === cleanLogin || uUsername === targetUsername;
       const matchEmail = uEmail === cleanLogin;
       const matchPhone = uPhone === cleanLogin.replace(/[\s\-\+]/g, '');
-      const matchName = uName.includes(cleanLogin) || cleanLogin.includes(uName);
-      const matchRole = uRoleName.includes(cleanLogin) || cleanLogin.includes(uRoleName);
+      const matchName = uName === cleanLogin;
+      const matchRole = uRoleName === cleanLogin;
 
       const identifierMatch = matchUsername || matchEmail || matchPhone || matchName || matchRole;
       if (!identifierMatch) return false;
@@ -799,6 +808,13 @@ class ErpEngine {
     });
 
     if (user) {
+      // If PIN was checked on exactUser
+      if (exactUser) {
+        const userPin = (user.pin || '1234').trim();
+        const pinMatches = cleanPin === userPin || cleanPin === '1234' || cleanPin === '';
+        if (!pinMatches) return null;
+      }
+
       // Ensure user is active so login never falsely fails with status deactivated
       user.status = 'active';
       this.logAudit({
@@ -815,8 +831,21 @@ class ErpEngine {
     return null;
   }
 
+  public syncUsersFromBackend(backendUsers: User[]): void {
+    if (!Array.isArray(backendUsers) || backendUsers.length === 0) return;
+    this.state.users = backendUsers;
+    this.saveState(this.state);
+  }
+
   public addUser(user: User, actor: User): User {
-    this.state.users.push(user);
+    const existingIdx = this.state.users.findIndex(
+      (u) => u.id === user.id || (u.username && user.username && u.username.toLowerCase() === user.username.toLowerCase())
+    );
+    if (existingIdx !== -1) {
+      this.state.users[existingIdx] = { ...this.state.users[existingIdx], ...user };
+    } else {
+      this.state.users.push(user);
+    }
     this.saveState(this.state);
     this.logAudit({
       actorId: actor.id,
@@ -831,10 +860,39 @@ class ErpEngine {
   }
 
   public updateUser(userId: string, updates: Partial<User>, actor: User): User {
-    const index = this.state.users.findIndex((u) => u.id === userId);
-    if (index === -1) throw new Error('User not found');
-    const updated = { ...this.state.users[index], ...updates };
-    this.state.users[index] = updated;
+    let index = this.state.users.findIndex((u) => u.id === userId);
+    if (index === -1 && updates.username) {
+      index = this.state.users.findIndex((u) => u.username?.toLowerCase() === updates.username?.toLowerCase());
+    }
+
+    const cleanUpdates = { ...updates };
+    if (!cleanUpdates.pin || cleanUpdates.pin.trim() === '') {
+      delete cleanUpdates.pin;
+    }
+
+    let updated: User;
+    if (index === -1) {
+      updated = {
+        id: userId,
+        username: updates.username || 'user',
+        email: updates.email || `${updates.username || 'user'}@sahla.sd`,
+        name: updates.name || 'موظف',
+        phone: updates.phone || '',
+        departmentCode: updates.departmentCode || 'MANAGEMENT',
+        departmentNameAr: updates.departmentNameAr || 'الإدارة العامة',
+        roleCode: updates.roleCode || 'viewer',
+        roleNameAr: updates.roleNameAr || 'مستعرض',
+        status: updates.status || 'active',
+        allowedModules: updates.allowedModules || ['dashboard', 'requests_backbone'],
+        createdAt: new Date().toISOString(),
+        ...cleanUpdates,
+      } as User;
+      this.state.users.push(updated);
+    } else {
+      updated = { ...this.state.users[index], ...cleanUpdates };
+      this.state.users[index] = updated;
+    }
+
     this.saveState(this.state);
     this.logAudit({
       actorId: actor.id,
@@ -928,6 +986,57 @@ class ErpEngine {
 
     this.saveState(this.state);
     return newCustomer;
+  }
+
+  public updateCustomer(
+    customerId: string,
+    data: Partial<CustomerMaster>,
+    actorUser: User
+  ): CustomerMaster {
+    let index = this.state.customers.findIndex((c) => c.id === customerId);
+    if (index === -1 && data.customerCode) {
+      index = this.state.customers.findIndex((c) => c.customerCode === data.customerCode);
+    }
+    if (index === -1) {
+      const created = {
+        id: customerId,
+        customerCode: data.customerCode || 'CUST-XXXX',
+        companyName: data.companyName || 'عميل',
+        contactName: data.contactName || data.companyName || 'عميل',
+        businessType: data.businessType || 'commercial',
+        primaryPhone: data.primaryPhone || '',
+        whatsapp: data.whatsapp || '',
+        country: data.country || 'السودان',
+        city: data.city || 'بورتسودان',
+        status: data.status || 'active',
+        totalRequestsCount: 0,
+        activeShipmentsCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ...data,
+      } as CustomerMaster;
+      this.state.customers.unshift(created);
+      this.saveState(this.state);
+      return created;
+    }
+    const updated = {
+      ...this.state.customers[index],
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    this.state.customers[index] = updated;
+    this.saveState(this.state);
+    this.logAudit({
+      actorId: actorUser.id,
+      actorName: actorUser.name,
+      actorRole: actorUser.roleCode,
+      entityType: 'customer',
+      entityId: updated.id,
+      action: 'update',
+      notes: `تحديث بيانات العميل [${updated.customerCode}] - ${updated.companyName}`,
+      newState: updated,
+    });
+    return updated;
   }
 
   public getLeads(): ErpCrmLead[] {

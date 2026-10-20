@@ -140,6 +140,7 @@ export const SupplierMasterView: React.FC = () => {
   const [formTradeNameEn, setFormTradeNameEn] = useState('');
   const [formSupplierType, setFormSupplierType] = useState('manufacturer');
   const [formCountry, setFormCountry] = useState('الصين');
+  const [formCustomCountry, setFormCustomCountry] = useState('');
   const [formCity, setFormCity] = useState('فوشان (Foshan)');
   const [formPhone, setFormPhone] = useState('');
   const [formWhatsapp, setFormWhatsapp] = useState('');
@@ -184,7 +185,8 @@ export const SupplierMasterView: React.FC = () => {
 
   // Fetch Suppliers from Server
   const fetchSuppliers = useCallback(async () => {
-    if (!sessionToken) return;
+    const token = sessionToken || (typeof window !== 'undefined' ? localStorage.getItem('sahla_erp_auth_token_v1') : null);
+    if (!token) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -198,7 +200,7 @@ export const SupplierMasterView: React.FC = () => {
       });
 
       const res = await fetch(`/api/suppliers?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${sessionToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (data.success) {
@@ -222,8 +224,9 @@ export const SupplierMasterView: React.FC = () => {
     setSelectedSupplier(sup);
     setLoadingProfileDetails(true);
     try {
+      const token = sessionToken || (typeof window !== 'undefined' ? localStorage.getItem('sahla_erp_auth_token_v1') : null);
       const res = await fetch(`/api/suppliers/${sup.id}`, {
-        headers: { Authorization: `Bearer ${sessionToken}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
       if (data.success) {
@@ -277,7 +280,7 @@ export const SupplierMasterView: React.FC = () => {
         name: formName.trim(),
         tradeNameEn: formTradeNameEn.trim() || undefined,
         supplierType: formSupplierType,
-        country: formCountry,
+        country: formCountry === 'أخرى' && formCustomCountry.trim() ? formCustomCountry.trim() : formCountry,
         city: formCity.trim(),
         address: formAddress.trim() || undefined,
         phone: formPhone.trim(),
@@ -1307,18 +1310,55 @@ export const SupplierMasterView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">الدولة *</label>
+                  <label className="block font-bold text-slate-700 mb-1">الدولة / بلد المصنع *</label>
                   <select
                     value={formCountry}
-                    onChange={(e) => setFormCountry(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormCountry(val);
+                      if (val === 'الصين') setFormCity('كوانزو (Guangzhou)');
+                      else if (val === 'الإمارات') setFormCity('دبي (Dubai)');
+                      else if (val === 'تركيا') setFormCity('إسطنبول (Istanbul)');
+                      else if (val === 'السعودية') setFormCity('الرياض (Riyadh)');
+                      else if (val === 'مصر') setFormCity('القاهرة (Cairo)');
+                      else if (val === 'الهند') setFormCity('مومباي (Mumbai)');
+                      else if (val === 'فيتنام') setFormCity('هانوي (Hanoi)');
+                      else if (val === 'ألمانيا') setFormCity('فرانكفورت (Frankfurt)');
+                      else if (val === 'إيطاليا') setFormCity('ميلانو (Milano)');
+                      else if (val === 'الولايات المتحدة') setFormCity('نيويورك (New York)');
+                      else if (val === 'المملكة المتحدة') setFormCity('لندن (London)');
+                      else if (val === 'السودان') setFormCity('بورتسودان (Port Sudan)');
+                      else setFormCity('');
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 font-medium"
                   >
                     <option value="الصين">الصين (China)</option>
                     <option value="الإمارات">الإمارات (UAE)</option>
-                    <option value="السودان">السودان (Sudan)</option>
                     <option value="تركيا">تركيا (Turkey)</option>
                     <option value="السعودية">السعودية (KSA)</option>
+                    <option value="مصر">مصر (Egypt)</option>
+                    <option value="الهند">الهند (India)</option>
+                    <option value="فيتنام">فيتنام (Vietnam)</option>
+                    <option value="ألمانيا">ألمانيا (Germany)</option>
+                    <option value="إيطاليا">إيطاليا (Italy)</option>
+                    <option value="الولايات المتحدة">الولايات المتحدة (USA)</option>
+                    <option value="المملكة المتحدة">المملكة المتحدة (UK)</option>
+                    <option value="السودان">السودان (Sudan)</option>
+                    <option value="أخرى">دولة أخرى (International Factory)</option>
                   </select>
+                  {formCountry === 'أخرى' && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">اسم الدولة / البلد: *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مثال: البرازيل، ماليزيا، إسبانيا، بولندا..."
+                        value={formCustomCountry}
+                        onChange={(e) => setFormCustomCountry(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50/40 text-xs font-bold"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1328,7 +1368,7 @@ export const SupplierMasterView: React.FC = () => {
                     required
                     value={formCity}
                     onChange={(e) => setFormCity(e.target.value)}
-                    placeholder="مثال: فوشان، كوانزو، ييوو، شنزن..."
+                    placeholder="مثال: فوشان، كوانزو، دبي، إسطنبول، مومباي..."
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
                   />
                 </div>

@@ -24,7 +24,8 @@ export type DepartmentCode =
   | 'FINANCE'
   | 'OPERATIONS'
   | 'CUSTOMS'
-  | 'IT_ADMIN';
+  | 'IT_ADMIN'
+  | 'MARKETING_CREATIVE';
 
 export type RoleCode =
   | 'super_admin'
@@ -38,6 +39,7 @@ export type RoleCode =
   | 'sales'
   | 'sales_crm_officer'
   | 'department_manager'
+  | 'creative_media'
   | 'viewer';
 
 export type PermissionCode =

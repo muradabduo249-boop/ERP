@@ -440,7 +440,7 @@ productRouter.use(requireAuth);
 
 productRouter.get(
   '/categories',
-  requirePermission('products:view', 'procurement:view', 'finance:view'),
+  requirePermission('products:view', 'procurement:view', 'finance:view', 'requests:view'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const categories = await FinanceService.listProductCategories();
@@ -453,7 +453,7 @@ productRouter.get(
 
 productRouter.post(
   '/categories',
-  requirePermission('products:manage'),
+  requirePermission('products:manage', 'procurement:create_po', 'procurement:view'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const category = await FinanceService.createProductCategory(req.body, getActor(req));
@@ -466,7 +466,7 @@ productRouter.post(
 
 productRouter.get(
   '/',
-  requirePermission('products:view', 'procurement:view', 'finance:view'),
+  requirePermission('products:view', 'procurement:view', 'finance:view', 'requests:view'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const categoryId = req.query.categoryId as string | undefined;
@@ -487,7 +487,7 @@ productRouter.get(
 
 productRouter.get(
   '/:id',
-  requirePermission('products:view', 'procurement:view', 'finance:view'),
+  requirePermission('products:view', 'procurement:view', 'finance:view', 'requests:view'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const product = await FinanceService.getProductById(req.params.id);
@@ -500,7 +500,7 @@ productRouter.get(
 
 productRouter.post(
   '/',
-  requirePermission('products:manage'),
+  requirePermission('products:manage', 'procurement:create_po', 'procurement:view'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const product = await FinanceService.createProduct(req.body, getActor(req));
@@ -513,7 +513,7 @@ productRouter.post(
 
 productRouter.patch(
   '/:id',
-  requirePermission('products:manage'),
+  requirePermission('products:manage', 'procurement:create_po', 'procurement:view'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const product = await FinanceService.updateProduct(req.params.id, req.body, getActor(req));

@@ -48,6 +48,17 @@ export const requirePermission = (...permissionCodes: string[]) => {
       });
     }
 
+    // Explicit operational block for creative / social media roles
+    if (req.user.role?.code === 'creative_media' || req.user.department?.code === 'MARKETING_CREATIVE') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'حساب المصمم / السوشال ميديا غير مصرح له بتنفيذ أي عمليات تشغيلية في النظام (مستبعد تشغيلياً)',
+        },
+      });
+    }
+
     // super_admin has all permissions
     if (req.user.role?.code === 'super_admin') {
       return next();

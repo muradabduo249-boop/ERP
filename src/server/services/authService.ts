@@ -45,34 +45,89 @@ export class AuthService {
   }> {
     const cleanIdentifier = params.usernameOrEmail.trim().toLowerCase();
     const cleanSecret = params.pinOrPassword.trim();
+    const normalizedSecret = cleanSecret.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 
-    // Map common Arabic titles to seed usernames for seamless entry
-    let targetUsername = cleanIdentifier;
-    if (cleanIdentifier.includes('مدير') || cleanIdentifier.includes('admin') || cleanIdentifier === 'ceo') {
-      targetUsername = 'admin';
-    } else if (cleanIdentifier.includes('جمرك') || cleanIdentifier.includes('جمارك') || cleanIdentifier === 'customs') {
-      targetUsername = 'customs';
-    } else if (cleanIdentifier.includes('مال') || cleanIdentifier.includes('حساب') || cleanIdentifier === 'finance') {
-      targetUsername = 'finance';
-    } else if (cleanIdentifier.includes('مشتر') || cleanIdentifier.includes('توريد') || cleanIdentifier === 'procurement') {
-      targetUsername = 'procurement';
-    } else if (cleanIdentifier.includes('عمليات') || cleanIdentifier.includes('شحن') || cleanIdentifier === 'operations') {
-      targetUsername = 'operations';
-    }
-
-    // Find user by username or email
-    const matchedUsers = await db
+    // 1. Try finding by exact username
+    let matchedUsers = await db
       .select()
       .from(users)
-      .where(eq(users.username, targetUsername));
+      .where(eq(users.username, cleanIdentifier));
 
     let userRecord = matchedUsers[0];
+
+    // 2. Try finding by exact email
     if (!userRecord) {
       const emailMatches = await db
         .select()
         .from(users)
         .where(eq(users.email, cleanIdentifier));
       userRecord = emailMatches[0];
+    }
+
+    // 3. Try finding by phone number (normalized)
+    if (!userRecord) {
+      const cleanPhone = cleanIdentifier.replace(/[\s\-\+]/g, '');
+      if (cleanPhone.length >= 6) {
+        const allUsers = await db.select().from(users);
+        const match = allUsers.find(
+          (u) => u.phone && u.phone.replace(/[\s\-\+]/g, '') === cleanPhone
+        );
+        if (match) userRecord = match;
+      }
+    }
+
+    // 4. Try finding by exact Arabic full name
+    if (!userRecord) {
+      const rawTrimmed = params.usernameOrEmail.trim();
+      const nameMatches = await db.select().from(users).where(eq(users.name, rawTrimmed));
+      if (nameMatches.length === 1) {
+        userRecord = nameMatches[0];
+      }
+    }
+
+    // 3. Fallback for Arabic role shortcuts only if exact match is not found
+    if (!userRecord) {
+      let targetUsername = '';
+      if (
+        cleanIdentifier === 'المدير' ||
+        cleanIdentifier === 'المدير العام' ||
+        cleanIdentifier === 'مدير' ||
+        cleanIdentifier === 'admin' ||
+        cleanIdentifier === 'ceo' ||
+        cleanIdentifier === 'عبد الهادي' ||
+        cleanIdentifier === 'عبدالهادي'
+      ) {
+        targetUsername = 'admin';
+      } else if (cleanIdentifier === 'عمر' || cleanIdentifier === 'omar' || cleanIdentifier.includes('مكتب الصين')) {
+        targetUsername = 'omar';
+      } else if (cleanIdentifier === 'مقداد' || cleanIdentifier === 'miqdad' || cleanIdentifier.includes('تنسيق ميداني')) {
+        targetUsername = 'miqdad';
+      } else if (cleanIdentifier === 'أحمد' || cleanIdentifier === 'احمد' || cleanIdentifier === 'ahmed') {
+        targetUsername = 'ahmed';
+      } else if (cleanIdentifier === 'هشام' || cleanIdentifier === 'hisham' || cleanIdentifier.includes('توزيع')) {
+        targetUsername = 'hisham';
+      } else if (cleanIdentifier === 'راجي' || cleanIdentifier === 'raji' || cleanIdentifier.includes('مبيعات')) {
+        targetUsername = 'raji';
+      } else if (cleanIdentifier === 'تيسير' || cleanIdentifier === 'tayseer' || cleanIdentifier.includes('خدمة عملاء')) {
+        targetUsername = 'tayseer';
+      } else if (cleanIdentifier === 'تسابيح' || cleanIdentifier === 'tasabeeh' || cleanIdentifier.includes('مشتريات')) {
+        targetUsername = 'tasabeeh';
+      } else if (cleanIdentifier === 'الجمارك' || cleanIdentifier === 'جمارك' || cleanIdentifier === 'customs') {
+        targetUsername = 'customs';
+      } else if (cleanIdentifier === 'المالية' || cleanIdentifier === 'حسابات' || cleanIdentifier === 'finance') {
+        targetUsername = 'finance';
+      } else if (cleanIdentifier === 'المشتريات' || cleanIdentifier === 'توريد' || cleanIdentifier === 'procurement') {
+        targetUsername = 'procurement';
+      } else if (cleanIdentifier === 'العمليات' || cleanIdentifier === 'شحن' || cleanIdentifier === 'operations') {
+        targetUsername = 'operations';
+      }
+
+      if (targetUsername) {
+        const aliasMatches = await db.select().from(users).where(eq(users.username, targetUsername));
+        if (aliasMatches.length > 0) {
+          userRecord = aliasMatches[0];
+        }
+      }
     }
 
     if (!userRecord) {
@@ -111,8 +166,11 @@ export class AuthService {
       throw new Error('تم قفل الحساب مؤقتاً لتجاوز الحد المسموح لمحاولات الدخول الخاطئة');
     }
 
-    // Verify bcrypt hash
-    const isPasswordValid = await bcrypt.compare(cleanSecret, userRecord.passwordHash);
+    // Verify bcrypt hash (supports English and Arabic numerals)
+    let isPasswordValid = await bcrypt.compare(cleanSecret, userRecord.passwordHash);
+    if (!isPasswordValid && normalizedSecret !== cleanSecret) {
+      isPasswordValid = await bcrypt.compare(normalizedSecret, userRecord.passwordHash);
+    }
     if (!isPasswordValid) {
       // Increment failed attempts
       await db
@@ -286,5 +344,99 @@ export class AuthService {
       permissions: userPermissions,
       allowedModules: (u.allowedModules as string[]) || [],
     };
+  }
+
+  /**
+   * Update self profile (limited to non-sensitive personal info)
+   */
+  public static async updateProfile(
+    userId: string,
+    data: { name?: string; phone?: string; email?: string }
+  ): Promise<AuthenticatedUserPayload> {
+    const matched = await db.select().from(users).where(eq(users.id, userId));
+    if (matched.length === 0) {
+      throw new Error('المستخدم غير موجود');
+    }
+    const current = matched[0];
+
+    const updates: Partial<typeof users.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+
+    if (data.name && data.name.trim().length >= 2) {
+      updates.name = data.name.trim();
+    }
+    if (data.phone !== undefined) {
+      updates.phone = data.phone.trim() || null;
+    }
+    if (data.email && data.email.trim().toLowerCase() !== current.email) {
+      const cleanEmail = data.email.trim().toLowerCase();
+      const existingEmail = await db.select().from(users).where(eq(users.email, cleanEmail));
+      if (existingEmail.length > 0 && existingEmail[0].id !== userId) {
+        throw new Error('البريد الإلكتروني مستخدم بالفعل من قبل موظف آخر');
+      }
+      updates.email = cleanEmail;
+    }
+
+    await db.update(users).set(updates).where(eq(users.id, userId));
+
+    await AuditService.log({
+      actorId: userId,
+      actorName: current.name,
+      actorRole: 'user',
+      entityType: 'user',
+      entityId: userId,
+      action: 'profile_update',
+      notes: `تحديث البيانات الشخصية للمستخدم [${current.username}]`,
+    });
+
+    return await this.getUserPayload(userId);
+  }
+
+  /**
+   * Change own password with current password verification
+   */
+  public static async changePassword(
+    userId: string,
+    currentSecret: string,
+    newSecret: string
+  ): Promise<void> {
+    const matched = await db.select().from(users).where(eq(users.id, userId));
+    if (matched.length === 0) {
+      throw new Error('المستخدم غير موجود');
+    }
+    const current = matched[0];
+
+    if (!newSecret || newSecret.trim().length < 4) {
+      throw new Error('كلمة المرور الجديدة يجب ألا تقل عن 4 خانات');
+    }
+
+    // Verify current password
+    const isValid = await bcrypt.compare(currentSecret.trim(), current.passwordHash);
+    if (!isValid) {
+      throw new Error('كلمة المرور الحالية غير صحيحة');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newSecret.trim(), salt);
+
+    await db
+      .update(users)
+      .set({
+        passwordHash,
+        failedLoginAttempts: 0,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+
+    await AuditService.log({
+      actorId: userId,
+      actorName: current.name,
+      actorRole: 'user',
+      entityType: 'auth',
+      entityId: userId,
+      action: 'password_change',
+      notes: `تغيير كلمة المرور للمستخدم [${current.username}] بنجاح`,
+    });
   }
 }

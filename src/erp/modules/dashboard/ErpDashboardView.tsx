@@ -56,14 +56,9 @@ export const ErpDashboardView: React.FC<ErpDashboardViewProps> = ({ onNavigateTa
         <div>
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#F5B800] text-slate-950 shadow-xs">
-              نظام إدارة العمليات والتجارة الدولية SAHLA ERP
+              منصة سهلا لإدارة العمليات والتجارة الدولية SAHLA ERP
             </span>
-            {isCleanSlate ? (
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 text-white border border-white/30 flex items-center gap-1 backdrop-blur-xs">
-                <CheckCircle2 className="w-3 h-3 text-[#F5B800]" />
-                النظام نظيف من الصفر (جاهز للتشغيل الفعلي)
-              </span>
-            ) : (
+            {requests.length > 0 && (
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 text-white border border-white/30 flex items-center gap-1 backdrop-blur-xs">
                 <Sparkles className="w-3 h-3 text-[#F5B800]" />
                 بيانات عمليات نشطة ({requests.length} طلب)
@@ -247,7 +242,6 @@ export const ErpDashboardView: React.FC<ErpDashboardViewProps> = ({ onNavigateTa
               2
             </div>
             <div className="font-bold text-slate-900">الطلب المركزي</div>
-            <div className="text-[10px] text-amber-700 font-mono mt-0.5">Request Backbone</div>
           </div>
 
           <div

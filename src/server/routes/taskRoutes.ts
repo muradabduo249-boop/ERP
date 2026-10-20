@@ -18,6 +18,7 @@ const createTaskSchema = z.object({
 
 const updateTaskStatusSchema = z.object({
   status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+  notes: z.string().optional(),
 });
 
 const reassignTaskSchema = z.object({
@@ -142,7 +143,7 @@ taskRouter.get(
 taskRouter.post(
   '/check-deadlines',
   authenticate,
-  requirePermission('requests:assign'),
+  requirePermission('requests:view', 'requests:assign'),
   async (_req: AuthenticatedRequest, res: Response) => {
     try {
       const scanResult = await TaskService.checkUpcomingDeadlines();
@@ -247,6 +248,7 @@ taskRouter.patch(
           name: req.user!.name,
           role: req.user!.role?.code || 'user',
         },
+        parse.data.notes,
         req.ip,
         req.headers['user-agent']
       );
