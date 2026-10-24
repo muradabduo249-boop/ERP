@@ -124,7 +124,7 @@ export const RequestBackboneView: React.FC = () => {
   }, [customers, selectedCustomerId]);
 
   const fetchServerRequests = useCallback(async () => {
-    if (!sessionToken) return;
+    if (!sessionToken || sessionToken.startsWith('sahla_standalone_token_')) return;
     try {
       const params = new URLSearchParams({
         queue: selectedQueue,
@@ -134,6 +134,7 @@ export const RequestBackboneView: React.FC = () => {
       const res = await fetch(`/api/requests?${params.toString()}`, {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setServerRequests(data.data);
@@ -142,11 +143,12 @@ export const RequestBackboneView: React.FC = () => {
   }, [sessionToken, selectedQueue, searchQuery]);
 
   const fetchServerCustomers = useCallback(async () => {
-    if (!sessionToken) return;
+    if (!sessionToken || sessionToken.startsWith('sahla_standalone_token_')) return;
     try {
       const res = await fetch('/api/customers?limit=100', {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setServerCustomers(data.data);
@@ -165,11 +167,12 @@ export const RequestBackboneView: React.FC = () => {
   const handleSelectRequest = async (req: RequestHeader) => {
     setSelectedRequest(req);
     setActionError(null);
-    if (!sessionToken) return;
+    if (!sessionToken || sessionToken.startsWith('sahla_standalone_token_')) return;
     try {
       const res = await fetch(`/api/requests/${req.id}`, {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return;
       const data = await res.json();
       if (data.success && data.data) {
         setDetailedRequest(data.data);
