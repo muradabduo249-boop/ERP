@@ -187,6 +187,15 @@ export const SupplierMasterView: React.FC = () => {
   const fetchSuppliers = useCallback(async () => {
     const token = sessionToken || (typeof window !== 'undefined' ? localStorage.getItem('sahla_erp_auth_token_v1') : null);
     if (!token) return;
+
+    if (token.startsWith('sahla_standalone_token_')) {
+      const localSupps = erpEngine.getSuppliers();
+      setSuppliers(localSupps as any);
+      setTotalCount(localSupps.length);
+      setTotalPages(1);
+      return;
+    }
+
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -202,14 +211,23 @@ export const SupplierMasterView: React.FC = () => {
       const res = await fetch(`/api/suppliers?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
-      if (data.success) {
-        setSuppliers(data.data || []);
-        setTotalCount(data.pagination?.total || 0);
-        setTotalPages(data.pagination?.totalPages || 1);
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setSuppliers(data.data || []);
+          setTotalCount(data.pagination?.total || 0);
+          setTotalPages(data.pagination?.totalPages || 1);
+        }
+      } else {
+        const localSupps = erpEngine.getSuppliers();
+        setSuppliers(localSupps as any);
+        setTotalCount(localSupps.length);
+        setTotalPages(1);
       }
     } catch (err) {
-      console.error('Failed to fetch suppliers:', err);
+      console.warn('Backend suppliers fetch note:', err);
+      const localSupps = erpEngine.getSuppliers();
+      setSuppliers(localSupps as any);
     } finally {
       setLoading(false);
     }

@@ -98,11 +98,12 @@ export const CustomerMasterView: React.FC = () => {
   const [dupWarning, setDupWarning] = useState<CustomerMaster[] | null>(null);
 
   const fetchServerCustomers = useCallback(async () => {
-    if (!sessionToken) return;
+    if (!sessionToken || sessionToken.startsWith('sahla_standalone_token_')) return;
     try {
       const res = await fetch('/api/customers?limit=100', {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         const mapped: CustomerMaster[] = data.data.map((c: any) => ({
