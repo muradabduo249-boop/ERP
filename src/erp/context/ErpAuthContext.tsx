@@ -306,9 +306,30 @@ export const ErpAuthProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }, 50);
 
           return { success: true };
-        } else if (!response.ok && response.status < 500) {
-          // Explicit credential error from backend
-          return { success: false, error: data.error?.message || 'اسم المستخدم أو رمز PIN غير صحيح' };
+        } else if (!response.ok) {
+          const errMsg = data?.error?.message || '';
+          const isDbQueryError =
+            errMsg.includes('Failed query') ||
+            errMsg.includes('select') ||
+            errMsg.includes('from') ||
+            errMsg.includes('params:') ||
+            errMsg.includes('connect') ||
+            errMsg.includes('database') ||
+            errMsg.includes('users') ||
+            errMsg.includes('ECONNREFUSED') ||
+            response.status >= 500;
+
+          if (isDbQueryError) {
+            backendFailed = true;
+          } else {
+            // Also test if local engine can authenticate the user immediately
+            const localUser = erpEngine.authenticateUser(loginId, pin);
+            if (localUser) {
+              backendFailed = true;
+            } else {
+              return { success: false, error: 'اسم المستخدم أو رمز PIN غير صحيح' };
+            }
+          }
         } else {
           backendFailed = true;
         }

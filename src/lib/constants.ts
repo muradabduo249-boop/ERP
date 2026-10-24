@@ -5,7 +5,7 @@ import {
   SequenceRecord,
   ShipmentStatusKey,
   User,
-} from '../types';
+} from '../types.ts';
 
 export const DEFAULT_WHATSAPP_NUMBER = '+249912345678';
 
@@ -355,6 +355,8 @@ export const SEED_USERS: User[] = [
     createdAt: '2026-01-24T08:30:00Z',
   },
 ];
+
+export const INITIAL_USERS = SEED_USERS;
 
 // ==========================================
 // 4. CONCURRENCY-SAFE SEQUENCES INITIAL SEED
